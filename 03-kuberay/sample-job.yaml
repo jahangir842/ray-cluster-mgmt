@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-ray-job
+  namespace: default
+spec:
+  template:
+    spec:
+      serviceAccountName: default
+      restartPolicy: Never
+      
+      containers:
+      - name: ray-job
+        image: rayproject/ray:2.0.1
+        imagePullPolicy: IfNotPresent
+        
+        # Example Python script
+        command:
+        - python
+        - -c
+        - |
+          import ray
+          import time
+          
+          print("Initializing Ray...")
+          ray.init(address="ray://my-ray-cluster-head-svc:10001")
+          
+          @ray.remote
+          def simple_task(x):
+              return x * x
+          
+          print("Submitting tasks...")
+          futures = [simple_task.remote(i) for i in range(5)]
+          results = ray.get(futures)
+          
+          print(f"Results: {results}")
+          ray.shutdown()
+          print("Job complete!")
+        
+        # Alternatively, you can run a Python file:
+        # command:
+        # - python
+        # - /path/to/job.py
+        # args:
+        # - "ray://my-ray-cluster-head-svc:10001"
+        
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+  
+  # Backoff configuration
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600  # Delete job after 1 hour

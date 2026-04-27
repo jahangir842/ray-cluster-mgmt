@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+  # Ray Head Node
+  ray-head:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ray-head
+    hostname: ray-head
+    ports:
+      - "6379:6379"      # Ray client port
+      - "8265:8265"      # Ray dashboard
+      - "10001:10001"    # Ray GCS server port
+    environment:
+      - RAY_DASHBOARD_PORT=8265
+      - RAY_memory=3000000000       # 3GB object store
+      - RAY_object_store_memory=1000000000  # 1GB
+    volumes:
+      - ./:/app
+      - /tmp/ray:/tmp/ray
+    networks:
+      - ray-network
+    command: >
+      bash -c "
+      ray start --head 
+        --port=6379 
+        --dashboard-port=8265 
+        --num-cpus=4 
+        --object-store-memory=1000000000 &&
+      sleep infinity
+      "
+    healthcheck:
+      test: ["CMD", "ray", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # Ray Worker Nodes
+  ray-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      ray-head:
+        condition: service_healthy
+    environment:
+      - RAY_memory=3000000000
+      - RAY_object_store_memory=1000000000
+    volumes:
+      - ./:/app
+      - /tmp/ray:/tmp/ray
+    networks:
+      - ray-network
+    command: >
+      bash -c "
+      ray start 
+        --address=ray-head:6379 
+        --num-cpus=2 
+        --object-store-memory=1000000000 &&
+      sleep infinity
+      "
+    healthcheck:
+      test: ["CMD", "ray", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Number of worker nodes (can be scaled with: docker-compose up -d --scale ray-worker=N)
+
+networks:
+  ray-network:
+    driver: bridge

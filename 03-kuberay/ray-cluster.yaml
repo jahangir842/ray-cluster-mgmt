@@ -1,0 +1,170 @@
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: my-ray-cluster
+  namespace: default
+spec:
+  rayVersion: '2.0.1'
+  
+  # Head node configuration
+  head:
+    replicas: 1
+    rayStartParams:
+      port: '6379'
+      num-cpus: '2'
+      object-store-memory: '1000000000'  # 1GB
+    
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: head
+      spec:
+        restartPolicy: Always
+        serviceAccountName: default
+        
+        containers:
+        - name: ray-head
+          image: rayproject/ray:2.0.1
+          imagePullPolicy: IfNotPresent
+          
+          # Expose ports
+          ports:
+          - containerPort: 6379
+            name: ray-client
+          - containerPort: 8265
+            name: ray-dashboard
+          - containerPort: 10001
+            name: ray-gcs
+          
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          
+          # Environment variables
+          env:
+          - name: RAY_memory
+            value: "4000000000"  # 4GB
+          - name: RAY_object_store_memory
+            value: "1000000000"  # 1GB
+          
+          # Health checks
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          
+          # Volume mounts
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+        
+        # Volumes
+        volumes:
+        - name: ray-logs
+          emptyDir: {}
+  
+  # Worker node configuration
+  workerGroupSpecs:
+  - groupName: "worker-group"
+    replicas: 2  # Number of worker nodes
+    minReplicas: 2  # Minimum workers (for auto-scaling)
+    maxReplicas: 10  # Maximum workers (for auto-scaling)
+    
+    rayStartParams:
+      num-cpus: '2'
+      object-store-memory: '1000000000'  # 1GB
+    
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: worker
+          ray.io/worker-group: "worker-group"
+      
+      spec:
+        restartPolicy: Always
+        serviceAccountName: default
+        
+        containers:
+        - name: ray-worker
+          image: rayproject/ray:2.0.1
+          imagePullPolicy: IfNotPresent
+          
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          
+          # Environment variables
+          env:
+          - name: RAY_memory
+            value: "4000000000"  # 4GB
+          - name: RAY_object_store_memory
+            value: "1000000000"  # 1GB
+          
+          # Health checks
+          livenessProbe:
+            exec:
+              command: ["ray", "health-check"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["ray", "health-check"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          
+          # Volume mounts
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+        
+        # Volumes
+        volumes:
+        - name: ray-logs
+          emptyDir: {}
+  
+  # Auto-scaling configuration
+  autoscalerOptions:
+    upscalingMode: "default"  # or "aggressive"
+    idleTimeoutSeconds: 60    # Scale down after 60 seconds idle
+    resources:
+      limits:
+        cpu: "500m"
+
+---
+# Service to expose Ray head node
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-ray-cluster-head-svc
+  namespace: default
+spec:
+  type: ClusterIP
+  ports:
+  - name: ray-client
+    port: 6379
+    targetPort: ray-client
+  - name: ray-dashboard
+    port: 8265
+    targetPort: ray-dashboard
+  - name: ray-gcs
+    port: 10001
+    targetPort: ray-gcs
+  selector:
+    ray.io/cluster: my-ray-cluster
+    ray.io/node-type: head
