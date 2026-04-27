@@ -133,8 +133,6 @@ pip install ray[default]
 python -c "import ray; print(ray.__version__)"
 ```
 
-Your head node IP is **192.168.3.73** - you'll use this to connect worker nodes.
-
 ---
 
 ## Step 2: Start the Ray Head Node
@@ -153,7 +151,7 @@ Start Ray:
 conda activate ray-env
 
 # Start the head node
-ray start --head --port=6379
+ray start --head --port=6379 --dashboard-host=0.0.0.0
 ```
 
 Expected output:
@@ -339,71 +337,50 @@ This gracefully shuts down all Ray processes.
 
 ---
 
-## Network Connectivity Checklist
+## 6. Advanced Monitoring: Prometheus & Grafana
 
-If nodes can't connect, verify:
+While the built-in Ray Dashboard on port `8265` is excellent for real-time debugging, production clusters require long-term metric storage and historical visualization. 
 
-```bash
-# From worker node, ping the head (192.168.3.73):
-ping 192.168.3.73
+Ray provides built-in CLI commands to instantly spin up a local Prometheus server pre-configured to scrape hardware and task metrics directly from your cluster.
 
-# From worker node, test port connectivity:
-telnet 192.168.3.73 6379
+### Launching Prometheus
 
-# Check firewall (may need to open ports):
-sudo ufw allow 6379
-sudo ufw allow 8265
-sudo ufw allow 10001
-
-# Check if head node is listening:
-netstat -ln | grep 6379
-```
-
----
-
-## Common Configuration Options
-
-### Head Node Setup with Conda (Quick Reference)
+To download and start the Prometheus time-series database on your Head Node, run the following command:
 
 ```bash
-# SSH to head node
-ssh ubuntu@192.168.3.73
-
-# Install Miniconda
-curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
-bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
-$HOME/miniconda/bin/conda init && source ~/.bashrc
-
-# Create and activate ray-env
-conda create -n ray-env python=3.12 -y
-conda activate ray-env
-pip install ray[default]
-
-# Start head node
-ray start --head --port=6379
+ray metrics launch-prometheus
 ```
 
-### Worker Node Setup with Conda (Quick Reference)
+**Expected Output:**
+You should see a successful installation and startup log, providing you with the exact Process ID (PID) to manage the service:
 
-Repeat this on each worker node (192.168.3.71, 192.168.3.72, 192.168.3.73, etc.):
+```text
+2024-01-11 16:08:45,805 - INFO - Prometheus installed successfully.
+2024-01-11 16:08:45,810 - INFO - Prometheus has started.
+Prometheus is running with PID 1234.
+To stop Prometheus, use the command: 'kill 1234', or if you need to force stop, use 'kill -9 1234'.
+
+[...]
+ts=2024-01-12T00:47:29.761Z caller=main.go:1009 level=info msg="Server is ready to receive web requests."
+ts=2024-01-12T00:47:29.761Z caller=manager.go:1012 level=info component="rule manager" msg="Starting rule manager..."
+```
+
+### Accessing the Metrics
+
+Once running, Prometheus will begin scraping metrics from the cluster. You can access the raw Prometheus web UI via:
+* **URL:** `http://<HEAD_NODE_IP>:9090` *(Note: If you are running this locally, it will be `http://localhost:9090`)*
+
+From here, you can connect Grafana to this Prometheus data source to build custom dashboards tracking GPU temperatures, memory utilization, and node health over time.
+
+### Shutting Down Prometheus
+
+If you need to stop the metric collection to free up node resources, run the dedicated shutdown command rather than manually killing the PID:
 
 ```bash
-# SSH to worker node (example: 192.168.3.71)
-ssh ubuntu@192.168.3.71
-
-# Install Miniconda
-curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
-bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
-$HOME/miniconda/bin/conda init && source ~/.bashrc
-
-# Create and activate ray-env
-conda create -n ray-env python=3.12 -y
-conda activate ray-env
-pip install ray[default]
-
-# Connect to head (192.168.3.73)
-ray start --address='192.168.3.73:6379'
+ray metrics shutdown-prometheus
 ```
+
+> **Further Reading:** For advanced configurations, including custom scraping intervals or modifying the `prometheus.yml` file, refer to the [Official Ray Metrics Documentation](https://docs.ray.io/en/latest/cluster/metrics.html).
 
 ---
 
