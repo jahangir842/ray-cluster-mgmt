@@ -147,19 +147,17 @@ This workshop covers **three production-ready deployment strategies**, each suit
 ```
 ray-cluster-mgmt/
 ├── README.md                           # This file
-├── 01-manual-cli/                      # Manual deployment using `ray start`
-│   ├── README.md                       # Setup instructions
-│   ├── setup-environment.sh            # Automated environment setup
-│   └── example-job.py                  # Sample Ray job
+├── 01-manual-cli/                      # Manual SSH-based multi-node deployment
+│   ├── README.md                       # Step-by-step setup instructions with condensed reference guide
+│   └── example-job.py                  # Sample distributed Ray job
 ├── 02-docker-compose/                  # Multi-node simulation with Docker
-│   ├── README.md                       # Docker setup instructions
-│   ├── docker-compose.yml              # Multi-container cluster definition
+│   ├── README.md                       # Docker setup instructions  
+│   ├── docker-compose.yml              # Multi-container cluster definition (1 head + 2 workers)
 │   ├── Dockerfile                      # Ray environment image
 │   └── example-job.py                  # Sample Ray job for containers
 └── 03-kuberay/                         # Production deployment on Kubernetes
     ├── README.md                       # KubeRay setup instructions
-    ├── ray-cluster.yaml                # Ray cluster CRD
-    ├── ray-autoscaler.yaml             # Autoscaler configuration
+    ├── ray-cluster.yaml                # Ray cluster Custom Resource Definition
     └── sample-job.yaml                 # Example Kubernetes Job
 ```
 
@@ -169,43 +167,60 @@ ray-cluster-mgmt/
 
 Choose your deployment method and follow the direct commands (no scripts—execute step by step to learn!).
 
-### Option 1️⃣: Manual CLI Setup (5-10 minutes)
+### Option 1️⃣: Manual CLI Setup (10-15 minutes with SSH)
 
-**Best for:** Learning, local testing, prototyping  
-**Requirements:** Python 3.8+  
-**Complexity:** ⭐ Easiest
+**Best for:** Learning, multi-node production clusters, on-premise infrastructure  
+**Requirements:** Multiple Ubuntu machines, SSH access, conda/miniconda  
+**Complexity:** ⭐ Easiest multi-node approach
 
-Execute these commands directly:
+This method uses **SSH to connect to real machines** and sets up a production-ready Ray cluster.
 
+**Head Node Setup:**
 ```bash
-# Step 1: Create isolated Python environment
-python3 -m venv ray-env
-source ray-env/bin/activate
+ssh ubuntu@HEAD_NODE_IP
 
-# Step 2: Install Ray framework
-pip install --upgrade pip
+# Install Miniconda
+curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
+bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
+$HOME/miniconda/bin/conda init && source ~/.bashrc
+
+# Create conda environment
+conda create -n ray-env python=3.9 -y
+conda activate ray-env
 pip install ray[default]
 
-# Step 3: Start Ray (keep this terminal open)
-ray start --head
-
-# Step 4: In a NEW terminal, run example job
-python 01-manual-cli/example-job.py
-
-# Step 5: View dashboard in browser
-# Open: http://localhost:8265
-
-# Step 6: Stop Ray when done
-ray stop
+# Start Ray head node
+ray start --head --port=6379
 ```
 
-**What you'll learn:**
-- Setting up isolated Python environments
-- Ray startup process
-- Submitting distributed tasks
-- Using the Ray Dashboard for monitoring
+**Worker Node Setup (repeat for each worker):**
+```bash
+ssh ubuntu@WORKER_NODE_IP
 
-See [01-manual-cli/README.md](01-manual-cli/README.md) for detailed step-by-step guide.
+# Install Miniconda (same commands as head)
+curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
+bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
+$HOME/miniconda/bin/conda init && source ~/.bashrc
+
+# Create conda environment
+conda create -n ray-env python=3.9 -y
+conda activate ray-env
+pip install ray[default]
+
+# Connect to head node
+ray start --address='HEAD_NODE_IP:6379'
+```
+
+**Verify and monitor:**
+```bash
+# On head node
+ray status
+
+# View dashboard
+# Open: http://HEAD_NODE_IP:8265
+```
+
+See [01-manual-cli/README.md](01-manual-cli/README.md) for step-by-step multi-node SSH-based deployment guide.
 
 ---
 
