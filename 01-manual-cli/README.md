@@ -8,7 +8,7 @@ We'll:
 - SSH into a **head node** and install/start Ray
 - SSH into **worker nodes** and connect them to the head
 - Use `ray start --head` on the head node
-- Use `ray start --address=<HEAD_IP>:6379` on workers
+- Use `ray start --address='192.168.3.73:6379'` on workers
 - Verify the cluster and run distributed tasks
 
 **When to use this method:**
@@ -24,7 +24,7 @@ We'll:
 - **1 Head Node:** Dedicated machine to coordinate the cluster
   - Ubuntu 20.04+ (or compatible Linux)
   - 4GB RAM minimum
-  - Static IP or hostname (e.g., `head-node.local` or `10.0.1.100`)
+  - Static IP or hostname (e.g., `head-node.local` or `192.168.3.73`)
   
 - **N Worker Nodes:** Machines to execute tasks
   - Ubuntu 20.04+ (same OS as head)
@@ -45,11 +45,8 @@ We'll:
 SSH into your head node:
 
 ```bash
-# Connect to head node (replace with your actual IP or hostname)
-ssh -i <path-to-key.pem> ubuntu@HEAD_NODE_IP
-
-# Example:
-# ssh -i ~/.ssh/id_rsa ubuntu@10.0.1.100
+# Connect to head node (192.168.3.73)
+ssh -i <path-to-key.pem> ubuntu@192.168.3.73
 ```
 
 Once connected, update system and install conda:
@@ -92,19 +89,7 @@ pip install ray[default]
 python -c "import ray; print(f'Ray {ray.__version__} installed')"
 ```
 
-Find your head node's **internal IP address** (this is critical for worker connections):
-
-```bash
-# Get internal IP (look for private IP like 10.x.x.x or 172.x.x.x)
-hostname -I
-
-# Example output:
-# 10.0.1.100 172.17.0.1
-
-# Your HEAD_NODE_IP should be the first one (the actual machine IP, not docker/vpn IPs)
-```
-
-**Save your HEAD_NODE_IP** - you'll need it for worker nodes!
+Your head node IP is **192.168.3.73** - you'll use this to connect worker nodes.
 
 ---
 
@@ -124,8 +109,8 @@ Expected output:
 ```
 ----
 Started Ray with:
-  Local node IP: 10.0.1.100
-  Dashboard available at http://10.0.1.100:8265
+  Local node IP: 192.168.3.73
+  Dashboard available at http://192.168.3.73:8265
   Ray logs: /home/ubuntu/ray_results/...
 ----
 ```
@@ -192,22 +177,16 @@ On **each worker node**, connect to the head:
 # Ensure conda environment is activated on the worker
 conda activate ray-env
 
-# Connect to head node (replace HEAD_NODE_IP with the value from Step 1)
-ray start --address='HEAD_NODE_IP:6379'
-```
-
-Example with actual IP:
-```bash
-source ~/ray-env/bin/activate
-ray start --address='10.0.1.100:6379'
+# Connect to head node (192.168.3.73)
+ray start --address='192.168.3.73:6379'
 ```
 
 Expected output:
 ```
 ----
 Started Ray with:
-  Remote node IP: 10.0.1.101
-  Connected to head at: 10.0.1.100:6379
+  Remote node IP: 192.168.3.71
+  Connected to head at: 192.168.3.73:6379
 ----
 ```
 
@@ -230,15 +209,15 @@ Expected output with 1 head + 2 workers:
 Node Count: 3
 Total Available Resources: {'CPU': 12.0}
 
-Node: ray-head (127.0.0.1)
+Node: ray-head (192.168.3.73)
   Used Resources: {}
   Available Resources: {'CPU': 4.0}
 
-Node: ray-worker-1 (10.0.1.101)
+Node: ray-worker-1 (192.168.3.71)
   Used Resources: {}
   Available Resources: {'CPU': 4.0}
 
-Node: ray-worker-2 (10.0.1.102)
+Node: ray-worker-2 (192.168.3.72)
   Used Resources: {}
   Available Resources: {'CPU': 4.0}
 ```
@@ -257,8 +236,8 @@ cat > distributed_job.py << 'EOF'
 import ray
 import socket
 
-# Connect to the remote Ray head node
-ray.init(address="ray://HEAD_NODE_IP:10001")
+# Connect to the remote Ray head node (192.168.3.73)
+ray.init(address="ray://192.168.3.73:10001")
 
 print(f"Connected to Ray cluster!")
 print(f"Available resources: {ray.available_resources()}")
@@ -296,8 +275,6 @@ pip install ray[default]  # If not already installed locally
 python distributed_job.py
 ```
 
-Replace `HEAD_NODE_IP` with your actual IP (from Step 1).
-
 ---
 
 ## Step 7: Monitor with Ray Dashboard
@@ -306,7 +283,7 @@ The Ray Dashboard provides real-time monitoring:
 
 ```bash
 # On your local machine, open browser
-http://HEAD_NODE_IP:8265
+http://192.168.3.73:8265
 ```
 
 You'll see:
@@ -342,11 +319,11 @@ This gracefully shuts down all Ray processes.
 If nodes can't connect, verify:
 
 ```bash
-# From worker node, ping the head:
-ping HEAD_NODE_IP
+# From worker node, ping the head (192.168.3.73):
+ping 192.168.3.73
 
 # From worker node, test port connectivity:
-telnet HEAD_NODE_IP 6379
+telnet 192.168.3.73 6379
 
 # Check firewall (may need to open ports):
 sudo ufw allow 6379
@@ -365,7 +342,7 @@ netstat -ln | grep 6379
 
 ```bash
 # SSH to head node
-ssh ubuntu@HEAD_NODE_IP
+ssh ubuntu@192.168.3.73
 
 # Install Miniconda
 curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
@@ -383,11 +360,11 @@ ray start --head --port=6379
 
 ### Worker Node Setup with Conda (Quick Reference)
 
-Repeat this on each worker node:
+Repeat this on each worker node (192.168.3.71, 192.168.3.72, 192.168.3.73, etc.):
 
 ```bash
-# SSH to worker node
-ssh ubuntu@WORKER_NODE_IP
+# SSH to worker node (example: 192.168.3.71)
+ssh ubuntu@192.168.3.71
 
 # Install Miniconda
 curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
@@ -399,8 +376,8 @@ conda create -n ray-env python=3.9 -y
 conda activate ray-env
 pip install ray[default]
 
-# Connect to head (replace HEAD_NODE_IP with actual IP from Step 1)
-ray start --address='HEAD_NODE_IP:6379'
+# Connect to head (192.168.3.73)
+ray start --address='192.168.3.73:6379'
 ```
 
 ---
@@ -420,7 +397,7 @@ When connecting workers, specify resources:
 
 ```bash
 # Start worker with specific CPU allocation
-ray start --address='HEAD_NODE_IP:6379' \
+ray start --address='192.168.3.73:6379' \
   --num-cpus=2 \
   --num-gpus=1
 ```
@@ -433,9 +410,8 @@ ray start --address='HEAD_NODE_IP:6379' \
 Then connect to the head node:
 
 ```bash
-# Replace HEAD_IP with your head node's actual IP address
-# Find it by running: hostname -I
-ray start --address='HEAD_IP:6379'
+# Connect to head node (192.168.3.73)
+ray start --address='192.168.3.73:6379'
 ```
 
 ### Verify the Multi-Node Cluster
@@ -489,8 +465,8 @@ pip install ray[default]
 ### Issue: Worker can't connect to head node
 
 ```bash
-# Verify network connectivity from worker to head
-ping HEAD_IP
+# Verify network connectivity from worker to head (192.168.3.73)
+ping 192.168.3.73
 
 # Ensure firewall allows port 6379
 sudo ufw allow 6379
@@ -556,8 +532,8 @@ Before moving to advanced topics, confirm you can:
 - [ ] Activate conda environment: `conda activate ray-env`
 - [ ] Install Ray and verify the version: `pip install ray[default]`
 - [ ] SSH to head node and start Ray: `ray start --head`
-- [ ] SSH to worker nodes and connect: `ray start --address='HEAD_IP:6379'`
-- [ ] See the Ray Dashboard at `http://HEAD_NODE_IP:8265`
+- [ ] SSH to worker nodes and connect: `ray start --address='192.168.3.73:6379'`
+- [ ] See the Ray Dashboard at `http://192.168.3.73:8265`
 - [ ] Submit tasks using `@ray.remote`
 - [ ] Retrieve results with `ray.get()`
 - [ ] Stop the cluster cleanly: `ray stop`

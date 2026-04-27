@@ -177,7 +177,7 @@ This method uses **SSH to connect to real machines** and sets up a production-re
 
 **Head Node Setup:**
 ```bash
-ssh ubuntu@HEAD_NODE_IP
+ssh ubuntu@192.168.3.73
 
 # Install Miniconda
 curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
@@ -193,9 +193,20 @@ pip install ray[default]
 ray start --head --port=6379
 ```
 
-**Worker Node Setup (repeat for each worker):**
+**Worker Node Setup**
+
+Repeat for each worker at: 
+
+192.168.3.71
+192.168.3.72
+192.168.3.74
+192.168.3.75
+192.168.3.76
+192.168.3.77
+192.168.3.78
+
 ```bash
-ssh ubuntu@WORKER_NODE_IP
+ssh ubuntu@192.168.3.71
 
 # Install Miniconda (same commands as head)
 curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
@@ -208,7 +219,7 @@ conda activate ray-env
 pip install ray[default]
 
 # Connect to head node
-ray start --address='HEAD_NODE_IP:6379'
+ray start --address='192.168.3.73:6379'
 ```
 
 **Verify and monitor:**
@@ -217,7 +228,7 @@ ray start --address='HEAD_NODE_IP:6379'
 ray status
 
 # View dashboard
-# Open: http://HEAD_NODE_IP:8265
+# Open: http://192.168.3.73:8265
 ```
 
 See [01-manual-cli/README.md](01-manual-cli/README.md) for step-by-step multi-node SSH-based deployment guide.
