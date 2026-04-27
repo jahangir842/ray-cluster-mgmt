@@ -82,16 +82,18 @@ We'll:
 
 ---
 
-## Step 1: Prepare Your Head Node Machine
+## Step 1: Prepare Node Machine (Head or Worker)
 
-SSH into your head node:
+This step will be applied to all nodes including Head node and all worker nodes.
+
+**SSH Connection:** SSH into your head node:
 
 ```bash
-# Connect to head node (192.168.3.73)
-ssh -i <path-to-key.pem> ubuntu@192.168.3.73
+# Connect to head node ( e.g 192.168.3.73)
+ssh user@<Node IP>
 ```
 
-Once connected, update system and install conda:
+**Install Conda:** Once connected, update system and install conda:
 
 ```bash
 # Update package lists
@@ -112,11 +114,11 @@ $HOME/miniconda/bin/conda init
 source ~/.bashrc
 ```
 
-Create a conda environment for Ray on the head node:
+**Environment:** Create a conda environment for Ray on the head node:
 
 ```bash
-# Create conda environment named ray-env with Python 3.9
-conda create -n ray-env python=3.9 -y
+# Create conda environment named ray-env with Python 3.12
+conda create -n ray-env python=3.12 -y
 
 # Activate the environment
 conda activate ray-env
@@ -128,7 +130,7 @@ pip install --upgrade pip
 pip install ray[default]
 
 # Verify installation
-python -c "import ray; print(f'Ray {ray.__version__} installed')"
+python -c "import ray; print(ray.__version__)"
 ```
 
 Your head node IP is **192.168.3.73** - you'll use this to connect worker nodes.
@@ -137,7 +139,14 @@ Your head node IP is **192.168.3.73** - you'll use this to connect worker nodes.
 
 ## Step 2: Start the Ray Head Node
 
-Still on the head node, start Ray:
+**SSH Connection:** SSH into your head node:
+
+```bash
+# Connect to head node ( e.g 192.168.3.73)
+ssh user@<Node IP>
+```
+
+Start Ray:
 
 ```bash
 # Ensure conda environment is activated
@@ -176,40 +185,14 @@ Available Resources: {'CPU': 4.0}
 
 ---
 
-## Step 3: Prepare Worker Nodes
+## Step 3: Start Worker Nodes
 
 Open **new SSH sessions** to each worker node and repeat the setup:
 
 ```bash
 # SSH into worker 1
-ssh -i <path-to-key.pem> ubuntu@WORKER_NODE_1_IP
-
-# Once connected:
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y build-essential
-
-# Install Miniconda if not already installed
-curl -sL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o miniconda.sh
-bash miniconda.sh -b -p $HOME/miniconda
-rm miniconda.sh
-$HOME/miniconda/bin/conda init
-source ~/.bashrc
-
-# Create conda environment
-conda create -n ray-env python=3.9 -y
-conda activate ray-env
-
-# Install Ray
-pip install --upgrade pip
-pip install ray[default]
-
-# Verify installation
-python -c "import ray; print(f'Ray {ray.__version__} installed')"
+ssh user@WORKER_NODE_IP
 ```
-
-**Repeat this for each worker node** (worker 2, worker 3, etc.)
-
----
 
 ## Step 4: Connect Worker Nodes to Head Node
 
@@ -392,7 +375,7 @@ bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
 $HOME/miniconda/bin/conda init && source ~/.bashrc
 
 # Create and activate ray-env
-conda create -n ray-env python=3.9 -y
+conda create -n ray-env python=3.12 -y
 conda activate ray-env
 pip install ray[default]
 
@@ -414,7 +397,7 @@ bash miniconda.sh -b -p $HOME/miniconda && rm miniconda.sh
 $HOME/miniconda/bin/conda init && source ~/.bashrc
 
 # Create and activate ray-env
-conda create -n ray-env python=3.9 -y
+conda create -n ray-env python=3.12 -y
 conda activate ray-env
 pip install ray[default]
 
@@ -483,7 +466,7 @@ Total Available Resources: {'CPU': 12.0, 'memory': 12000000000.0}
 ray start --head --port=6380
 ```
 
-### Issue: "Cannot find Python 3.9"
+### Issue: "Cannot find Python 3.12"
 
 ```bash
 # Check available Python versions
@@ -491,7 +474,7 @@ python3 --version
 which python3
 
 # Install if missing
-sudo apt install python3.9
+sudo apt install python3.12
 ```
 
 ### Issue: "Ray installation failed"
@@ -570,7 +553,7 @@ ray.shutdown()
 Before moving to advanced topics, confirm you can:
 
 - [ ] Install Miniconda/Anaconda 
-- [ ] Create conda environment: `conda create -n ray-env python=3.9`
+- [ ] Create conda environment: `conda create -n ray-env python=3.12`
 - [ ] Activate conda environment: `conda activate ray-env`
 - [ ] Install Ray and verify the version: `pip install ray[default]`
 - [ ] SSH to head node and start Ray: `ray start --head`
