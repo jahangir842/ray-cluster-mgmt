@@ -379,8 +379,9 @@ Run the dedicated shutdown command rather than manually killing the PID:
 ray metrics shutdown-prometheus
 ```
 
-> **Further Reading:** For advanced configurations, including custom scraping intervals or modifying the `prometheus.yml` file, refer to the [Official Ray Metrics Documentation](https://docs.ray.io/en/latest/cluster/metrics.html).
+> **Further Reading:** [Official Ray Metrics Documentation](https://docs.ray.io/en/latest/cluster/metrics.html).
 
+> **Further Reading:** [Official Grafana Installation](https://grafana.com/docs/grafana/latest/setup-grafana/installation/debian/)
 ---
 
 ## Advanced Ray Configuration
