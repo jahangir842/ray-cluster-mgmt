@@ -356,7 +356,7 @@ This gracefully shuts down all Ray processes.
 
 While the built-in Ray Dashboard on port `8265` is excellent for real-time debugging, production clusters require long-term metric storage and historical visualization. 
 
-Ray provides built-in CLI commands to instantly spin up a local Prometheus server pre-configured to scrape hardware and task metrics directly from your cluster.
+Ray provides built-in CLI commands to instantly spin up a `local Prometheus` server pre-configured to scrape hardware and task metrics directly from your cluster.
 
 ### Launching Prometheus
 
@@ -366,30 +366,18 @@ To download and start the Prometheus time-series database on your Head Node, run
 ray metrics launch-prometheus
 ```
 
-**Expected Output:**
-You should see a successful installation and startup log, providing you with the exact Process ID (PID) to manage the service:
-
-```text
-2024-01-11 16:08:45,805 - INFO - Prometheus installed successfully.
-2024-01-11 16:08:45,810 - INFO - Prometheus has started.
-Prometheus is running with PID 1234.
-To stop Prometheus, use the command: 'kill 1234', or if you need to force stop, use 'kill -9 1234'.
-
-[...]
-ts=2024-01-12T00:47:29.761Z caller=main.go:1009 level=info msg="Server is ready to receive web requests."
-ts=2024-01-12T00:47:29.761Z caller=manager.go:1012 level=info component="rule manager" msg="Starting rule manager..."
-```
-
 ### Accessing the Metrics
 
-Once running, Prometheus will begin scraping metrics from the cluster. You can access the raw Prometheus web UI via:
-* **URL:** `http://<HEAD_NODE_IP>:9090` *(Note: If you are running this locally, it will be `http://localhost:9090`)*
+You can access the raw Prometheus web UI via:
+* **URL:** `http://192.168.3.73:9090`
+
+*(Note: If you are running this locally, it will be `http://localhost:9090`)*
 
 From here, you can connect Grafana to this Prometheus data source to build custom dashboards tracking GPU temperatures, memory utilization, and node health over time.
 
 ### Shutting Down Prometheus
 
-If you need to stop the metric collection to free up node resources, run the dedicated shutdown command rather than manually killing the PID:
+Run the dedicated shutdown command rather than manually killing the PID:
 
 ```bash
 ray metrics shutdown-prometheus
