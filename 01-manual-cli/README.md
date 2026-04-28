@@ -337,14 +337,10 @@ You'll see:
 When done, shutdown cleanly:
 
 ```bash
-# On EACH worker node, press Ctrl+C in the terminal running:
-# ray start --address='...'
-# OR execute:
+# On EACH worker node, execute:
 ray stop
 
-# On the head node, press Ctrl+C in the terminal running:
-# ray start --head
-# OR execute:
+# On the head node, execute:
 ray stop
 ```
 
