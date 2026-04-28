@@ -228,21 +228,36 @@ ray status
 
 Expected output with 1 head + 2 workers:
 ```
-======== Cluster Stats ========
-Node Count: 3
-Total Available Resources: {'CPU': 12.0}
+======== Autoscaler status: 2026-04-28 11:49:34.998064 ========
+Node status
+---------------------------------------------------------------
+Active:
+ 1 node_3116aac3590af52a1d1a4a9a127a72c9766ba9f5bc7adc38d37a4176
+ 1 node_c7078ab929d374a4cf05b65638a89768869704f3b3f6c6c33a6ad947
+ 1 node_7223affe1cda7138ba9dbbb14101647c89f8d116ef076306221a23dc
+ 1 node_15cce78704e6fe6f08e847cde3379d00ac49cd583382d29b1ae099a3
+ 1 node_b94ffba8b685c5859e24b6b7a1431f9bfd8832e0fccf06a55b892c9c
+ 1 node_5e6977484ce93c3f03a99de4c52398f688fd8e13ceefe2cda1b75aa9
+ 1 node_6682c62d02ac92314f296636aadd7704dae5597bb3661f75261adc4b
+ 1 node_95bf27f73c75943513b7ec6cb7056375b4e693f56779a472a9b31ce9
+Pending:
+ (no pending nodes)
+Recent failures:
+ (no failures)
 
-Node: ray-head (192.168.3.73)
-  Used Resources: {}
-  Available Resources: {'CPU': 4.0}
+Resources
+---------------------------------------------------------------
+Total Usage:
+ 0.0/268.0 CPU
+ 0.0/8.0 GPU
+ 0B/304.28GiB memory
+ 0B/130.41GiB object_store_memory
 
-Node: ray-worker-1 (192.168.3.71)
-  Used Resources: {}
-  Available Resources: {'CPU': 4.0}
+From request_resources:
+ (none)
+Pending Demands:
+ (no resource demands)
 
-Node: ray-worker-2 (192.168.3.72)
-  Used Resources: {}
-  Available Resources: {'CPU': 4.0}
 ```
 
 **Excellent!** All nodes connected! ✅
