@@ -1,7 +1,9 @@
 ## Demonstration Examples of Cluster Scaling. 
 
 ### Step 1: The Baseline (1 Core)
-You can run this script anywhere, regardless of cluster status, because it completely ignores Ray. 
+You can run this script anywhere, regardless of cluster status, because it completely ignores Ray. It will run on sigle CPU thread because standard Python has a built-in safety mechanism called the **Global Interpreter Lock (GIL)**. It forces threads to take turns using the CPU. Even if you have 32 cores, only one core is allowed to process math at any given millisecond while the others wait.
+
+* **The Solution (Ray):** Ray bypasses this by using **multiprocessing**. Instead of using threads that share one lock, it spins up completely separate Python background processes. Each process gets its own memory and its own lock, allowing them to run truly in parallel across every core you have.
 
 2. Run the script: 
    ```bash
