@@ -10,7 +10,7 @@ def burn_cpu(operations):
 if __name__ == "__main__":
     ray.init(address='auto') 
     CORES = int(ray.cluster_resources().get('CPU', 1))
-    TOTAL = 100_000_000
+    TOTAL = 1000000000
     CHUNK_SIZE = TOTAL // CORES
     
     print(f"Running on {CORES} Cluster Cores...")

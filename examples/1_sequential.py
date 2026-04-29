@@ -7,7 +7,7 @@ def burn_cpu(operations):
     return total
 
 if __name__ == "__main__":
-    TOTAL = 100_000_000
+    TOTAL = 1000000000
     print("Running on 1 CPU Core...")
     
     start = time.time()
