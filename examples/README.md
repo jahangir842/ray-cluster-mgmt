@@ -35,8 +35,9 @@ Now, we reconnect the network and throw all 8 machines at the exact same math pr
    ```bash
    ray status
    ```
+
    *(Note: You may need to briefly run your `ray start --address='192.168.3.73:6379'` command on your worker nodes so they rejoin the newly started head node).*
-2. Run the cluster script:
+1. Run the cluster script:
    ```bash
    python 3_cluster.py
    ```
