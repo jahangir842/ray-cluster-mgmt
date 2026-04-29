@@ -8,15 +8,20 @@ def burn_cpu(operations):
     return total
 
 if __name__ == "__main__":
-    ray.init() # Starts an isolated local instance
+    ray.init() 
     CORES = int(ray.cluster_resources().get('CPU', 1))
-    TOTAL = 1000000000
+    TOTAL = 100_000_000
+    CHUNK_SIZE = TOTAL // CORES
+    
     print(f"Running on {CORES} Local Cores...")
     
     start = time.time()
-    # Split the 100 million square roots evenly across your local cores
-    futures = [burn_cpu.remote(TOTAL // CORES) for _ in range(CORES)]
-    ray.get(futures)
+    # Send the exact same chunk size to every core
+    futures = [burn_cpu.remote(CHUNK_SIZE) for _ in range(CORES)]
+    
+    results = ray.get(futures)
+    final_total = sum(results)
     
     print(f"Time: {time.time() - start:.2f} seconds")
+    print(f"Final Total: {final_total:,.2f}")
     ray.shutdown()
