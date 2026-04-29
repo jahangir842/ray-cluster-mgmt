@@ -89,3 +89,76 @@ To maintain architectural consistency and prevent rogue jobs from causing cluste
 * **Pull Requests are Mandatory:** All architectural changes, resource adjustments (e.g., changing `num_gpus`), and environment dependency updates must be submitted via **GitHub Pull Requests**.
 * **Task Tracking:** If you are optimizing a Ray Task or debugging a memory leak, centralize the implementation details and error logs in **GitHub Issues** rather than direct messages. This ensures the entire backend team has a searchable history of how we solved cluster bottlenecks.
 * **Graceful Shutdowns:** Always ensure your driver scripts finish cleanly or call `ray.shutdown()` at the end of execution to release resources back to the pool.
+
+---
+
+## 1. Ray Tasks (Stateless)
+
+A **Task** is simply a standard Python function that you have decorated with `@ray.remote`. 
+
+It is completely **stateless**. It takes inputs, performs a computation, returns an output, and then immediately "forgets" everything. It does not remember anything from previous times it was called.
+
+* **How it executes:** Because Tasks hold no state, the Ray Scheduler can instantly blast thousands of them across your entire 8-node cluster simultaneously. 
+* **Best used for:** Data processing, array manipulations, image resizing, or running independent simulations.
+* **Analogy:** A calculator. You type in `5 + 5`, it gives you `10`, and it completely forgets that math problem the moment you clear it.
+
+**The Code:**
+```python
+import ray
+
+@ray.remote
+def add_numbers(a, b):
+    # This task knows nothing about the outside world
+    return a + b
+
+# Executes asynchronously somewhere on the cluster
+future = add_numbers.remote(5, 5) 
+```
+
+---
+
+## 2. Ray Actors (Stateful)
+
+An **Actor** is a Python class that you have decorated with `@ray.remote`. 
+
+It is **stateful**. When you instantiate an Actor, Ray spins up a dedicated, persistent worker process on one specific node in your cluster. That worker stays alive, holds variables in its local memory, and remembers its state across multiple method calls.
+
+* **How it executes:** Because an Actor maintains internal state, the methods you call on it execute **sequentially** (one after another) to prevent data corruption, not in parallel. 
+* **Best used for:** Serving machine learning models (like your vLLM workers holding model weights in GPU memory), managing database connections, or tracking player scores in a multiplayer game.
+* **Analogy:** A bank account. If you deposit $10, it updates your balance. If you return 5 minutes later to withdraw $5, it remembers your previous transaction.
+
+**The Code:**
+```python
+import ray
+
+@ray.remote
+class Counter:
+    def __init__(self):
+        # This state is held in memory on a specific worker node
+        self.value = 0
+
+    def increment(self):
+        self.value += 1
+        return self.value
+
+# 1. Spawns a persistent worker on the cluster
+my_counter = Counter.remote()
+
+# 2. Both calls go to the exact same worker node
+my_counter.increment.remote() # Returns 1
+my_counter.increment.remote() # Returns 2 (It remembered!)
+```
+
+---
+
+## Summary Comparison
+
+You can drop this table directly into your Developer Guidelines for quick reference:
+
+| Feature | Ray Task | Ray Actor |
+| :--- | :--- | :--- |
+| **Python Equivalent** | Function (`def`) | Class (`class`) |
+| **Statefulness** | **Stateless** (Forgets everything) | **Stateful** (Remembers variables) |
+| **Execution** | Highly parallel (Runs anywhere instantly) | Sequential (Methods queue up on one worker) |
+| **Resource Locking** | Locks CPU/GPU only while executing the function | Locks CPU/GPU for its entire lifespan |
+| **Use Case** | Batch processing, data transformation | Model serving, database connections, trackers |
