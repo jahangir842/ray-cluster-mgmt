@@ -1,13 +1,8 @@
-Here is the step-by-step execution guide to demonstrate the exact scaling power of your cluster. 
-
-Save the three scripts provided above into your `~/projects/ray-cluster-mgmt/01-manual-cli` directory on `pc3`. 
-
-***
+## Demonstration Examples of Cluster Scaling. 
 
 ### Step 1: The Baseline (1 Core)
 You can run this script anywhere, regardless of cluster status, because it completely ignores Ray. 
 
-1. Ensure your environment is active: `conda activate ray-env`
 2. Run the script: 
    ```bash
    python 1_sequential.py
@@ -19,6 +14,7 @@ To prove how much power a *single* machine has when unblocked by Python's GIL, w
 
 1. Shut down the cluster daemon on `pc3`:
    ```bash
+   ray status
    ray stop
    ```
 2. Run the local script:
