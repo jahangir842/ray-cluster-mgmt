@@ -3,9 +3,7 @@ import math
 import random
 import ray
 
-# --- 1. The Heavy Mathematical Workload ---
 def heavy_computation(samples):
-    """Simulates heavy CPU work by calculating Pi."""
     inside_circle = 0
     for _ in range(samples):
         x, y = random.random(), random.random()
@@ -13,63 +11,52 @@ def heavy_computation(samples):
             inside_circle += 1
     return inside_circle
 
-# --- 2. The Ray Task Wrapper ---
 @ray.remote(num_cpus=1)
 def distributed_computation(samples):
     return heavy_computation(samples)
 
 if __name__ == "__main__":
-    # --- The Heavy Configuration ---
-    # 1 Billion samples guarantees the CPUs have to sweat.
-    # This eliminates the network "jitter" trap entirely.
-    TOTAL_SAMPLES = 1_000_000_000
+    TOTAL_SAMPLES = 500_000_000
     
-    # Match chunks EXACTLY to your total available cluster cores (132).
-    # This ensures 0 idle machines and 0 tasks waiting in a queue.
-    NUM_CHUNKS = 132  
-    SAMPLES_PER_CHUNK = TOTAL_SAMPLES // NUM_CHUNKS
-
-    print(f"--- Starting HEAVY Benchmark: {TOTAL_SAMPLES:,} Operations ---")
-    print(f"Each of the {NUM_CHUNKS} tasks will process {SAMPLES_PER_CHUNK:,} operations.\n")
-
     # ==========================================
-    # RUN 1: Sequential (Local Single Core)
+    # 1. RUN SEQUENTIAL (1 Local Core)
     # ==========================================
-    print("1. Running Sequentially (Local Machine Only)...")
-    print("   (This might take over 60 seconds. Grab a coffee.)")
+    print("1. Running Sequentially (1 Core)...")
     start_time = time.time()
-
-    for _ in range(NUM_CHUNKS):
-        heavy_computation(SAMPLES_PER_CHUNK)
-
-    sequential_duration = time.time() - start_time
-    print(f"Sequential Execution Time: {sequential_duration:.2f} seconds")
+    heavy_computation(TOTAL_SAMPLES)
+    print(f"Time: {time.time() - start_time:.2f} seconds\n")
 
     # ==========================================
-    # RUN 2: Distributed (Ray Cluster)
+    # 2. RUN LOCAL PARALLEL (All Local Cores)
     # ==========================================
-    print("\n2. Connecting to Ray Cluster...")
-    ray.init(address='auto') 
+    print("2. Running Local Parallel...")
+    # Calling ray.init() without an address starts a local-only instance
+    ray.init() 
+    local_cpus = int(ray.cluster_resources().get('CPU', 0))
+    print(f"Using {local_cpus} local cores on this machine.")
     
-    available_cpus = int(ray.cluster_resources().get('CPU', 0))
-    print(f"Cluster connected! Access acquired to {available_cpus} CPUs.")
-    print(f"Running Distributed ({NUM_CHUNKS} parallel tasks)...")
     start_time = time.time()
-
-    # Fire all 132 chunks simultaneously
-    futures = [distributed_computation.remote(SAMPLES_PER_CHUNK) for _ in range(NUM_CHUNKS)]
-    
-    # Wait for all chunks to finish
+    samples_per_local_chunk = TOTAL_SAMPLES // local_cpus
+    futures = [distributed_computation.remote(samples_per_local_chunk) for _ in range(local_cpus)]
     ray.get(futures)
-
-    distributed_duration = time.time() - start_time
-    print(f"Distributed Execution Time: {distributed_duration:.2f} seconds")
+    print(f"Time: {time.time() - start_time:.2f} seconds\n")
+    
+    # Shut down the local-only instance
+    ray.shutdown() 
 
     # ==========================================
-    # FINAL RESULTS
+    # 3. RUN CLUSTER PARALLEL (132 Cores)
     # ==========================================
-    speedup = sequential_duration / distributed_duration
-    print(f"\n--- Final Results ---")
-    print(f"The Ray Cluster was {speedup:.2f}x faster than local sequential execution!")
+    print("3. Running Cluster Parallel...")
+    # Pointing to 'auto' connects to your 8-node network
+    ray.init(address='auto') 
+    cluster_cpus = int(ray.cluster_resources().get('CPU', 0))
+    print(f"Using {cluster_cpus} cluster cores.")
+    
+    start_time = time.time()
+    samples_per_cluster_chunk = TOTAL_SAMPLES // cluster_cpus
+    futures = [distributed_computation.remote(samples_per_cluster_chunk) for _ in range(cluster_cpus)]
+    ray.get(futures)
+    print(f"Time: {time.time() - start_time:.2f} seconds\n")
 
     ray.shutdown()
