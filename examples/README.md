@@ -1,20 +1,22 @@
 ## Demonstration Examples of Cluster Scaling. 
 
-### Step 1: The Baseline (1 Core)
-You can run this script anywhere, regardless of cluster status, because it completely ignores Ray. It will run on sigle CPU thread because standard Python has a built-in safety mechanism called the **Global Interpreter Lock (GIL)**. It forces threads to take turns using the CPU. Even if you have 32 cores, only one core is allowed to process math at any given millisecond while the others wait.
+### Example 1: Sequential Python Code (Single Machine, Single CPU Core)
 
-* **The Solution (Ray):** Ray bypasses this by using **multiprocessing**. Instead of using threads that share one lock, it spins up completely separate Python background processes. Each process gets its own memory and its own lock, allowing them to run truly in parallel across every core you have.
+* It will run on sigle CPU thread because standard Python has a built-in safety mechanism called the **Global Interpreter Lock (GIL)**.
+* Even if you have 32 cores, only one core is allowed to process math at any given millisecond while the others wait.
 
 2. Run the script: 
    ```bash
    python 1_sequential.py
    ```
-**What to watch for:** The terminal will hang for about 36 seconds as standard Python forces a single core to process all 500 million operations. 
+**What to watch for:** Note the time at the end of the process. 
 
-### Step 2: The Local Hardware limit (32 Cores)
-To prove how much power a *single* machine has when unblocked by Python's GIL, we need to run Ray in complete isolation. Because `pc3` is currently acting as your Master Node, we must temporarily stop the cluster daemon so the script doesn't accidentally hijack the full 132-core network.
+### Example 2: Distributed Python Code (Single Machine, Multiple CPU Cores)
 
-1. Shut down the cluster daemon on `pc3`:
+* We will use **Ray** without a cluster to overcome Python's GIL.
+* We must temporarily stop the cluster daemon so the script can run on a single machine.
+
+1. Shut down the cluster daemon:
    ```bash
    ray status
    ray stop
@@ -23,18 +25,19 @@ To prove how much power a *single* machine has when unblocked by Python's GIL, w
    ```bash
    python 2_local.py
    ```
-**What to watch for:** Ray will spin up a temporary, isolated instance using only `pc3`'s local cores. The execution time should plummet from ~36 seconds down to roughly **10 seconds**. 
+**What to watch for:** Note the time at the end of the process.
 
-### Step 3: The Distributed Cluster (132 Cores)
+### Example 3: Distributed Cluster (Multiple Machines, Multiple CPU Cores)
+
 Now, we reconnect the network and throw all 8 machines at the exact same math problem.
 
-1. Restart your Head Node daemon on `pc3`:
+1. Confirm the cluster is running.
    ```bash
-   ray start --head --port=6379 --dashboard-host=0.0.0.0
+   ray status
    ```
    *(Note: You may need to briefly run your `ray start --address='192.168.3.73:6379'` command on your worker nodes so they rejoin the newly started head node).*
 2. Run the cluster script:
    ```bash
    python 3_cluster.py
    ```
-**What to watch for:** The script will automatically detect the `auto` daemon, lock 1 CPU across all 132 available cores in your network, and return the result in roughly **2.5 seconds**.
+**What to watch for:** Note the time at the end of the process.
