@@ -24,7 +24,7 @@ if __name__ == "__main__":
     # 50 Million samples takes a noticeable amount of time sequentially
     TOTAL_SAMPLES = 50_000_000
     # We split the work into 20 separate chunks to distribute
-    NUM_CHUNKS = 132 
+    NUM_CHUNKS = 25 
     SAMPLES_PER_CHUNK = TOTAL_SAMPLES // NUM_CHUNKS
 
     print(f"--- Starting Benchmark: {TOTAL_SAMPLES:,} Operations ---")
