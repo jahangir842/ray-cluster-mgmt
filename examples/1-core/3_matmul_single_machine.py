@@ -18,7 +18,7 @@ def burn_cpu_matrix(size):
 if __name__ == "__main__":
     # Adjust MATRIX_SIZE to change the 'heat' 
     # 5000x5000 requires ~75MB of RAM and significant CPU work
-    MATRIX_SIZE = 50000000 
+    MATRIX_SIZE = 10000 
     
     print(f"Running Matrix Multiplication ({MATRIX_SIZE}x{MATRIX_SIZE})...")
     
