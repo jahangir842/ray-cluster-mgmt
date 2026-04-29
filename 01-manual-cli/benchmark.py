@@ -14,28 +14,31 @@ def heavy_computation(samples):
     return inside_circle
 
 # --- 2. The Ray Task Wrapper ---
-# We tell Ray that each chunk requires exactly 1 CPU
 @ray.remote(num_cpus=1)
 def distributed_computation(samples):
     return heavy_computation(samples)
 
 if __name__ == "__main__":
-    # --- Configuration ---
-    # 50 Million samples takes a noticeable amount of time sequentially
-    TOTAL_SAMPLES = 50_000_000
-    # We split the work into 20 separate chunks to distribute
-    NUM_CHUNKS = 25 
+    # --- The Heavy Configuration ---
+    # 1 Billion samples guarantees the CPUs have to sweat.
+    # This eliminates the network "jitter" trap entirely.
+    TOTAL_SAMPLES = 1_000_000_000
+    
+    # Match chunks EXACTLY to your total available cluster cores (132).
+    # This ensures 0 idle machines and 0 tasks waiting in a queue.
+    NUM_CHUNKS = 132  
     SAMPLES_PER_CHUNK = TOTAL_SAMPLES // NUM_CHUNKS
 
-    print(f"--- Starting Benchmark: {TOTAL_SAMPLES:,} Operations ---")
+    print(f"--- Starting HEAVY Benchmark: {TOTAL_SAMPLES:,} Operations ---")
+    print(f"Each of the {NUM_CHUNKS} tasks will process {SAMPLES_PER_CHUNK:,} operations.\n")
 
     # ==========================================
     # RUN 1: Sequential (Local Single Core)
     # ==========================================
-    print("\n1. Running Sequentially (Local Machine Only)...")
+    print("1. Running Sequentially (Local Machine Only)...")
+    print("   (This might take over 60 seconds. Grab a coffee.)")
     start_time = time.time()
 
-    # The script waits for each chunk to finish before starting the next
     for _ in range(NUM_CHUNKS):
         heavy_computation(SAMPLES_PER_CHUNK)
 
@@ -46,18 +49,17 @@ if __name__ == "__main__":
     # RUN 2: Distributed (Ray Cluster)
     # ==========================================
     print("\n2. Connecting to Ray Cluster...")
-    # 'auto' connects to your running head node daemon
     ray.init(address='auto') 
     
-    available_cpus = ray.cluster_resources().get('CPU', 0)
+    available_cpus = int(ray.cluster_resources().get('CPU', 0))
     print(f"Cluster connected! Access acquired to {available_cpus} CPUs.")
-    print("Running Distributed (Parallel)...")
+    print(f"Running Distributed ({NUM_CHUNKS} parallel tasks)...")
     start_time = time.time()
 
-    # .remote() fires all 20 chunks off to the cluster simultaneously 
+    # Fire all 132 chunks simultaneously
     futures = [distributed_computation.remote(SAMPLES_PER_CHUNK) for _ in range(NUM_CHUNKS)]
     
-    # ray.get() pauses the main script until all 20 chunks are returned
+    # Wait for all chunks to finish
     ray.get(futures)
 
     distributed_duration = time.time() - start_time
@@ -70,5 +72,4 @@ if __name__ == "__main__":
     print(f"\n--- Final Results ---")
     print(f"The Ray Cluster was {speedup:.2f}x faster than local sequential execution!")
 
-    # Clean up the connection
     ray.shutdown()
