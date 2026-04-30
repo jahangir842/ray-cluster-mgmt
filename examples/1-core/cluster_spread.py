@@ -5,7 +5,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 from collections import Counter
 
 MATRIX_SIZE = 2048
-NUM_TASKS = 200
+NUM_TASKS = 300
 
 @ray.remote
 def matmul(seed):
