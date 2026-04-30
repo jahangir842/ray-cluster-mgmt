@@ -1,16 +1,16 @@
 import time
+import numpy as np, socket
 import ray
 from ray.util.placement_group import placement_group
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 from collections import Counter
 
-MATRIX_SIZE = 2048
+MATRIX_SIZE = 16384
 NUM_TASKS = 300
 
 @ray.remote
-def matmul(seed):
-    import numpy as np, socket
-    rng = np.random.default_rng(seed)
+def matmul(num_task):
+    rng = np.random.default_rng(num_task)
     A = rng.random((MATRIX_SIZE, MATRIX_SIZE), dtype=np.float32)
     B = rng.random((MATRIX_SIZE, MATRIX_SIZE), dtype=np.float32)
     return socket.gethostname(), float(np.matmul(A, B).sum())
@@ -26,7 +26,7 @@ spread_matmul = matmul.options(
 )
 
 t0 = time.perf_counter()
-results = ray.get([spread_matmul.remote(seed) for seed in range(NUM_TASKS)])
+results = ray.get([spread_matmul.remote(num_task) for num_task in range(NUM_TASKS)])
 t = time.perf_counter() - t0
 
 hostnames, values = zip(*results)
