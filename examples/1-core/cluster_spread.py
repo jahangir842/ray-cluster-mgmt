@@ -5,7 +5,7 @@ from ray.util.placement_group import placement_group
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 from collections import Counter
 
-MATRIX_SIZE = 16384
+MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
 @ray.remote

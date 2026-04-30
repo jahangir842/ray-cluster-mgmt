@@ -3,7 +3,7 @@ import numpy as np, socket
 import ray
 from collections import Counter
 
-MATRIX_SIZE = 2048
+MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
 @ray.remote

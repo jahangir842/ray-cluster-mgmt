@@ -1,7 +1,7 @@
 import time
 import numpy as np
 
-MATRIX_SIZE = 16384
+MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
 def matmul(num_tasks, size):
