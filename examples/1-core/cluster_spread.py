@@ -1,5 +1,5 @@
-import time
-import numpy as np, socket
+import time, socket
+import numpy as np 
 import ray
 from ray.util.placement_group import placement_group
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
