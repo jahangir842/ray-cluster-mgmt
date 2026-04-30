@@ -14,7 +14,7 @@ t0 = time.perf_counter()
 C = matmul(NUM_TASKS, MATRIX_SIZE)
 t = time.perf_counter() - t0
 
-print(f"Single Machine | numpy BLAS | {MATRIX_SIZE}x{MATRIX_SIZE}\n")
+print(f"Matrix Size | {MATRIX_SIZE}x{MATRIX_SIZE}\n")
 print(f"{'Tasks':<8} {'Time (s)':>10}")
 print(f"{NUM_TASKS:<8} {t:>10.2f}")
 print(f"\nResult (sum of all outputs): {C.sum():.4f}")
