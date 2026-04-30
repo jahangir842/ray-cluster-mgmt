@@ -14,7 +14,7 @@ def matmul(seed):
 
 ray.init(address="auto", ignore_reinit_error=True)
 cpus = int(ray.cluster_resources().get("CPU", 0))
-nodes = len(ray.nodes())
+nodes = sum(1 for n in ray.nodes() if n["Alive"])
 
 t0 = time.perf_counter()
 results = ray.get([matmul.remote(seed) for seed in range(NUM_TASKS)])
