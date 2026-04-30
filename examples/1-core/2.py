@@ -1,5 +1,4 @@
 import time
-import numpy as np
 import ray
 
 MATRIX_SIZE = 2048
@@ -14,17 +13,22 @@ def matmul(seed):
 
 ray.init(address="auto", ignore_reinit_error=True)
 cpus = int(ray.cluster_resources().get("CPU", 0))
-print(f"Cluster: {cpus} CPUs\n")
+nodes = len(ray.nodes())
 
-print(f"{'Tasks':<10} {'Time (s)':<12} {'Tasks/s':<12} {'Speedup vs 64'}")
-print("-" * 50)
+print(f"Ray Cluster | {nodes} nodes | {cpus} CPUs | {MATRIX_SIZE}x{MATRIX_SIZE} matrices\n")
+print(f"{'Tasks':<8} {'Time (s)':>10} {'Tasks/s':>10} {'Time/task (s)':>15}")
+print("-" * 47)
 
-baseline = None
-for num_tasks in [64, 100, 150, 200]:
+times = {}
+for n in [64, 100, 150, 200]:
     t0 = time.perf_counter()
-    ray.get([matmul.remote(seed) for seed in range(num_tasks)])
-    elapsed = time.perf_counter() - t0
-    tps = num_tasks / elapsed
-    if baseline is None:
-        baseline = elapsed
-    print(f"{num_tasks:<10} {elapsed:<12.2f} {tps:<12.2f} {baseline/elapsed:.2f}x")
+    ray.get([matmul.remote(seed) for seed in range(n)])
+    t = time.perf_counter() - t0
+    times[n] = t
+    print(f"{n:<8} {t:>10.2f} {n/t:>10.2f} {t/n:>15.4f}")
+
+print("\n--- Final Result ---")
+print(f"  Best throughput : {max(n/t for n,t in times.items()):.2f} tasks/s  (at {max(times, key=lambda n: n/times[n])} tasks)")
+print(f"  Worst time      : {max(times.values()):.2f}s  (at {max(times, key=times.get)} tasks)")
+print(f"  Time scaling    : {times[200]/times[64]:.2f}x slower going 64 → 200 tasks")
+print(f"  Cluster headroom: {cpus} CPUs available, 200 tasks max → all run in parallel")
