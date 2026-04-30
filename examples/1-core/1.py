@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 MATRIX_SIZE = 2048
 NUM_CORES = 32
-NUM_TASKS = 200
+NUM_TASKS = 300
 
 def matmul(seed):
     rng = np.random.default_rng(seed)

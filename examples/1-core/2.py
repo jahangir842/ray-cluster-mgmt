@@ -2,7 +2,7 @@ import time
 import ray
 
 MATRIX_SIZE = 2048
-NUM_TASKS = 200
+NUM_TASKS = 300
 
 @ray.remote
 def matmul(seed):
