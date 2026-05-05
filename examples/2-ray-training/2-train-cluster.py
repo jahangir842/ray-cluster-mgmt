@@ -14,7 +14,7 @@ def train_func():
     
     # Model Setup
     model = resnet18(num_classes=10)
-    # model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     
     # [1] Ray Magic: Because use_gpu=True, this automatically moves the model to the GPU!
     model = ray.train.torch.prepare_model(model)
