@@ -51,7 +51,17 @@ def train_func():
             print(f"Epoch {epoch} Complete - Loss: {loss.item():.4f}")
 
 if __name__ == "__main__":
-    ray.init(address="auto", ignore_reinit_error=True)
+    ray.init(
+        address="auto", 
+        ignore_reinit_error=True,
+        runtime_env={
+            "env_vars": {
+                # Tell NCCL: "Look for enp0s31f6 first. If you don't have it, use eno1."
+                "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
+                "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1" 
+            }
+        }
+    )
 
     # [3] THE BIG UPGRADE: Tell Ray to use 8 workers and demand 1 GPU for each
     scaling_config = ray.train.ScalingConfig(num_workers=8,   use_gpu=True)
