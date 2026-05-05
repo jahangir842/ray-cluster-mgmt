@@ -4,20 +4,15 @@ import numpy as np
 MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
-def matmul_task(task_id):
-    matrix-A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float32)
-    matrix-B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float32)
-    matrix-C = np.matmul(matrix-A, matrix-B)
-    # Use float64 for the sum to avoid float32 precision loss on large reductions
-    return float(matrix-C.astype(np.float64).sum())
+def matmul():
+    A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    return float(np.matmul(A, B).sum())
 
 t0 = time.perf_counter()
-results = [matmul_task(i) for i in range(NUM_TASKS)]
+results = [matmul() for _ in range(NUM_TASKS)]
 t = time.perf_counter() - t0
 
-final_sum = sum(results)  # sum identical list of floats, matches Ray's approach
-
-print(f"Single Machine | {MATRIX_SIZE}x{MATRIX_SIZE}\n")
-print(f"{'Tasks':<8} {'Time (s)':>10}")
-print(f"{NUM_TASKS:<8} {t:>10.2f}")
-print(f"\nResult (sum of all outputs): {final_sum:.4f}")
+print(f"Single Machine | {NUM_TASKS} tasks | {MATRIX_SIZE}x{MATRIX_SIZE}")
+print(f"Time   : {t:.2f}s")
+print(f"Result : {sum(results):.4f}")
