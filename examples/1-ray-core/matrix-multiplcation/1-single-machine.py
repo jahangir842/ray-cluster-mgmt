@@ -5,12 +5,15 @@ MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
 def matmul():
-    A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
-    B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
-    return float(np.matmul(A, B).sum())
+    matrix_A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    matrix_B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    return float(np.matmul(matrix_A, matrix_B).sum())
 
 t0 = time.perf_counter()
-results = [matmul() for _ in range(NUM_TASKS)]
+results = []
+for i in range(NUM_TASKS):
+    result = matmul()
+    results.append(result)
 t = time.perf_counter() - t0
 
 print(f"Single Machine | {NUM_TASKS} tasks | {MATRIX_SIZE}x{MATRIX_SIZE}")

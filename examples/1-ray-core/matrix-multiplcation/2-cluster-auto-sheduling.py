@@ -8,9 +8,9 @@ NUM_TASKS = 300
 
 @ray.remote
 def matmul():
-    A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
-    B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
-    return socket.gethostname(), float(np.matmul(A, B).sum())
+    matrix_A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    matrix_B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
+    return socket.gethostname(), float(np.matmul(matrix_A, matrix_B).sum())
 
 ray.init(address="auto", ignore_reinit_error=True)
 nodes = sum(1 for n in ray.nodes() if n["Alive"])
