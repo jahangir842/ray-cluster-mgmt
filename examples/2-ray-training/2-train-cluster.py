@@ -26,7 +26,7 @@ def train_func():
     transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
     data_dir = "/tmp/fashion_mnist_data" 
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_data, batch_size=1024, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=2048, shuffle=True)
     
     # [2] Ray Magic: This automatically moves the image batches to the GPU during training!
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
