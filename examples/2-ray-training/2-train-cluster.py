@@ -26,7 +26,7 @@ def train_func():
     transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
     data_dir = "/tmp/fashion_mnist_data" 
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=1024, shuffle=True)
     
     # [2] Ray Magic: This automatically moves the image batches to the GPU during training!
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
@@ -53,7 +53,6 @@ def train_func():
 if __name__ == "__main__":
     ray.init(
         address="auto", 
-        ignore_reinit_error=True,
         runtime_env={
             "env_vars": {
                 # Tell NCCL: "Look for enp0s31f6 first. If you don't have it, use eno1."
@@ -65,7 +64,6 @@ if __name__ == "__main__":
 
     # [3] THE BIG UPGRADE: Tell Ray to use 8 workers and demand 1 GPU for each
     scaling_config = ray.train.ScalingConfig(num_workers=7,   use_gpu=True)
-
     trainer = ray.train.torch.TorchTrainer(
         train_func,
         scaling_config=scaling_config,
