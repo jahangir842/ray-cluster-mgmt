@@ -17,7 +17,12 @@ nodes = sum(1 for n in ray.nodes() if n["Alive"])
 cpus  = int(ray.cluster_resources().get("CPU", 0))
 
 t0 = time.perf_counter()
-results = ray.get([matmul.remote() for _ in range(NUM_TASKS)])
+futures = []
+for _ in range(NUM_TASKS):
+    future = matmul.remote()
+    futures.append(future)
+results = ray.get(futures)
+
 t = time.perf_counter() - t0
 
 hostnames, values = zip(*results)
