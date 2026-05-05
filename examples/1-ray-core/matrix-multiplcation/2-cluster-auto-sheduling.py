@@ -1,4 +1,4 @@
-import time , socket
+import time, socket
 import numpy as np
 import ray
 from collections import Counter
@@ -7,18 +7,20 @@ MATRIX_SIZE = 4096
 NUM_TASKS = 300
 
 @ray.remote
-def matmul(num_task):
-    rng = np.random.default_rng(num_task)
-    A = rng.random((MATRIX_SIZE, MATRIX_SIZE), dtype=np.float32)
-    B = rng.random((MATRIX_SIZE, MATRIX_SIZE), dtype=np.float32)
-    return socket.gethostname(), float(np.matmul(A, B).sum())
+def matmul_task(task_id):
+    A = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float32)
+    B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float32)
+    C = np.matmul(A, B)
+    # Use float64 for the sum to avoid float32 precision loss on large reductions
+    return socket.gethostname(), float(C.astype(np.float64).sum())
 
+# Connect to cluster
 ray.init(address="auto", ignore_reinit_error=True)
 cpus  = int(ray.cluster_resources().get("CPU", 0))
 nodes = sum(1 for n in ray.nodes() if n["Alive"])
 
 t0 = time.perf_counter()
-results = ray.get([matmul.remote(num_task) for num_task in range(NUM_TASKS)])
+results = ray.get([matmul_task.remote(i) for i in range(NUM_TASKS)])
 t = time.perf_counter() - t0
 
 hostnames, values = zip(*results)
