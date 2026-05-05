@@ -1,55 +1,67 @@
+import os
 import ray
 import torch
-import torch.nn as nn
-from ray.train import ScalingConfig
-from ray.train.torch import TorchTrainer
+from torch.nn import CrossEntropyLoss
+from torch.optim import Adam
+from torch.utils.data import DataLoader
+from torchvision.models import resnet18
+from torchvision.datasets import FashionMNIST
+from torchvision.transforms import ToTensor, Normalize, Compose
 import ray.train.torch
 
-# 1. The Deep Learning Logic (Standard PyTorch)
-def train_loop_per_worker():
-    # Create a basic neural network (1 input, 1 output)
-    model = nn.Linear(1, 1)
+def train_func():
+    print(f"--- Worker {ray.train.get_context().get_world_rank()} starting on GPU ---")
     
-    # MAGIC HAPPENS HERE: Ray automatically wraps the model so it can 
-    # sync its "brain" over the network with the other machines.
+    # Model Setup
+    model = resnet18(num_classes=10)
+    model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    
+    # [1] Ray Magic: Because use_gpu=True, this automatically moves the model to the GPU!
     model = ray.train.torch.prepare_model(model)
     
-    loss_fn = nn.MSELoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    criterion = CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=0.001)
 
-    # Dummy Dataset (The AI needs to learn that the output should be 2x the input)
-    inputs = torch.tensor([[1.0], [2.0], [3.0]])
-    labels = torch.tensor([[2.0], [4.0], [6.0]])
+    # Data Setup
+    transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
+    data_dir = "/tmp/fashion_mnist_data" 
+    train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
+    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+    
+    # [2] Ray Magic: This automatically moves the image batches to the GPU during training!
+    train_loader = ray.train.torch.prepare_data_loader(train_loader)
 
-    # Train for 100 iterations
-    for epoch in range(100):
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = loss_fn(outputs, labels)
-        loss.backward()
-        optimizer.step()
+    # Training Loop (3 Epochs)
+    for epoch in range(3):
+        if ray.train.get_context().get_world_size() > 1:
+            train_loader.sampler.set_epoch(epoch)
+
+        for images, labels in train_loader:
+            # We don't even need to write images.to("cuda") because prepare_data_loader did it.
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        metrics = {"loss": loss.item(), "epoch": epoch}
+        ray.train.report(metrics)
         
-    # Get the ID of the specific worker to prove it's running in parallel
-    worker_rank = ray.train.get_context().get_world_rank()
-    print(f"[Worker {worker_rank}] Finished training! Final Error (Loss): {loss.item():.4f}")
+        if ray.train.get_context().get_world_rank() == 0:
+            print(f"Epoch {epoch} Complete - Loss: {loss.item():.4f}")
 
 if __name__ == "__main__":
-    # Connect to the cluster
     ray.init(address="auto", ignore_reinit_error=True)
-    
-    print("--- Configuring Distributed Training ---")
-    # 2. The Cluster Configuration
-    # We are asking for 4 distributed workers (CPUs since use_gpu=False)
-    scaling_config = ScalingConfig(num_workers=4, use_gpu=False)
-    
-    # 3. The Ray Trainer
-    trainer = TorchTrainer(
-        train_loop_per_worker=train_loop_per_worker,
+
+    # [3] THE BIG UPGRADE: Tell Ray to use 8 workers and demand 1 GPU for each
+    scaling_config = ray.train.ScalingConfig(num_workers=8,   use_gpu=True)
+
+    trainer = ray.train.torch.TorchTrainer(
+        train_func,
         scaling_config=scaling_config,
     )
     
-    print("--- Starting the Deep Learning Factory ---")
+    print("--- Starting GPU-Accelerated ResNet18 Training ---")
     result = trainer.fit()
-    
-    print("--- Training Complete! ---")
+    print("--- GPU Training Finished Successfully! ---")
     ray.shutdown()
