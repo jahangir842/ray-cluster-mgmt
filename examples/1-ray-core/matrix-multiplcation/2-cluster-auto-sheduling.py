@@ -12,7 +12,7 @@ def matmul():
     matrix_B = np.full((MATRIX_SIZE, MATRIX_SIZE), 0.5, dtype=np.float64)
     return socket.gethostname(), float(np.matmul(matrix_A, matrix_B).sum())
 
-ray.init(address="auto", ignore_reinit_error=True)
+ray.init(address="auto")
 nodes = sum(1 for n in ray.nodes() if n["Alive"])
 cpus  = int(ray.cluster_resources().get("CPU", 0))
 
