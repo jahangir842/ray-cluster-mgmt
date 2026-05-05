@@ -64,7 +64,7 @@ if __name__ == "__main__":
     )
 
     # [3] THE BIG UPGRADE: Tell Ray to use 8 workers and demand 1 GPU for each
-    scaling_config = ray.train.ScalingConfig(num_workers=8,   use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(num_workers=7,   use_gpu=True)
 
     trainer = ray.train.torch.TorchTrainer(
         train_func,
