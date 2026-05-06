@@ -60,7 +60,18 @@ def train_func():
 
 if __name__ == "__main__":
     # Connect to your existing Ray cluster
-    ray.init(address="auto")
+    ray.init(
+        address="auto",
+        runtime_env={
+            "env_vars": {
+                "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
+                "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
+                # "NCCL_IB_DISABLE":    "1",
+                # "NCCL_P2P_DISABLE":   "1",
+                # "RAY_TRAIN_WORKER_GROUP_START_TIMEOUT_S": "300",
+            }
+        },
+    )
 
     # [4] Configure scaling and resource requirements
     scaling_config = ray.train.ScalingConfig(num_workers=2, use_gpu=True)
