@@ -6,14 +6,14 @@ import ray
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet152, resnet11
+from torchvision.models import resnet152, resnet18
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 import ray.train.torch
 
 def train_func():
     # Model, Loss, Optimizer
-    # model = resnet11(num_classes=10)
+    # model = resnet18(num_classes=10)
     model = resnet152(num_classes=10)
     model.conv1 = torch.nn.Conv2d(
         1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
