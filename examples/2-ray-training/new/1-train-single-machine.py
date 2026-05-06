@@ -1,90 +1,69 @@
-import time
+import os
+import tempfile
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
-from torch.utils.data import DataLoader, TensorDataset
-from torchvision.models import resnet50
+from torch.utils.data import DataLoader
+from torchvision.models import resnet18
+from torchvision.datasets import FashionMNIST
+from torchvision.transforms import ToTensor, Normalize, Compose
 
-# ─────────────────────────────────────────────
-# BENCHMARK PARAMETERS  (must match cluster script)
-#
-# Memory budget for ResNet50 @ 224x224:
-#   batch=32  → ~2GB  (safe on any GPU ≥ 8GB)
-#   batch=64  → ~4GB
-#   batch=128 → ~8GB
-#   batch=640 → ~23GB → OOM on 24GB GPU  ← was the bug
-#
-# We keep global effective batch = 160 on BOTH sides:
-#   Single machine : batch=32, grad_accum=5  → 32×5 = 160 per update
-#   Cluster        : batch=32 per worker, 5 workers, grad_accum=1
-#                    → 32×5 = 160 per update
-# ─────────────────────────────────────────────
-BATCH_SIZE       = 32          # per-GPU batch — safe on 24GB GPU
-GRAD_ACCUM_STEPS = 6           # simulate 6 workers: 32×6=192 effective batch
-NUM_EPOCHS       = 3
-LR               = 0.001
-NUM_CLASSES      = 10
-DATASET_SIZE     = 3200        # synthetic samples → 100 steps per epoch
-IMAGE_SIZE       = 224
-# ─────────────────────────────────────────────
-
-def train_single_machine():
+def train():
+    # [1] Hardware assignment: Automatically use GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    steps_per_epoch   = DATASET_SIZE // BATCH_SIZE
-    effective_updates = steps_per_epoch // GRAD_ACCUM_STEPS
+    print(f"Training on device: {device}")
 
-    print(f"--- Single Machine Benchmark on: {device.type.upper()} ---")
-    print(f"    Model              : ResNet50")
-    print(f"    Image size         : {IMAGE_SIZE}x{IMAGE_SIZE} RGB (synthetic)")
-    print(f"    Batch size (GPU)   : {BATCH_SIZE}")
-    print(f"    Grad accum steps   : {GRAD_ACCUM_STEPS}")
-    print(f"    Effective batch    : {BATCH_SIZE * GRAD_ACCUM_STEPS}  (= cluster global batch)")
-    print(f"    Steps per epoch    : {steps_per_epoch}")
-    print(f"    Weight updates/epoch: {effective_updates}\n")
-
-    start_time = time.time()
-
-    model = resnet50(num_classes=NUM_CLASSES).to(device)
-    criterion = CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=LR)
-
-    # Synthetic dataset — random 224x224 RGB images, no download needed
-    images     = torch.randn(DATASET_SIZE, 3, IMAGE_SIZE, IMAGE_SIZE)
-    labels     = torch.randint(0, NUM_CLASSES, (DATASET_SIZE,))
-    train_data = TensorDataset(images, labels)
-    train_loader = DataLoader(
-        train_data,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=(device.type == "cuda"),
+    # [2] Initialize Model
+    model = resnet18(num_classes=10)
+    # Modify the first conv layer to accept grayscale images (1 channel)
+    model.conv1 = torch.nn.Conv2d(
+        1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
     )
+    
+    # Move model to the selected device (GPU)
+    model = model.to(device)
 
-    for epoch in range(NUM_EPOCHS):
+    # Loss and Optimizer
+    criterion = CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=0.001)
+
+    # [3] Prepare Data
+    transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
+    data_dir = os.path.join(tempfile.gettempdir(), "data")
+    train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
+    
+    # Standard PyTorch DataLoader (no ray.train wrapper needed)
+    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+
+    # [4] Standard Training Loop
+    print("Starting training...")
+    for epoch in range(10):
         model.train()
-        epoch_start = time.time()
-        optimizer.zero_grad()
+        running_loss = 0.0
+        
+        for images, labels in train_loader:
+            # Move images and labels to the GPU
+            images, labels = images.to(device), labels.to(device)
 
-        for step, (imgs, lbls) in enumerate(train_loader):
-            imgs, lbls = imgs.to(device), lbls.to(device)
-            loss = criterion(model(imgs), lbls) / GRAD_ACCUM_STEPS
+            # Forward pass
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            
+            # Backward pass and optimize
+            optimizer.zero_grad()
             loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
 
-            if (step + 1) % GRAD_ACCUM_STEPS == 0:
-                optimizer.step()
-                optimizer.zero_grad()
+        # Print metrics at the end of each epoch
+        avg_loss = running_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/10] - Loss: {avg_loss:.4f}")
 
-        epoch_time = time.time() - epoch_start
-        print(
-            f"Epoch {epoch} | loss: {loss.item() * GRAD_ACCUM_STEPS:.4f} | "
-            f"time: {epoch_time:.2f}s | "
-            f"throughput: {DATASET_SIZE / epoch_time:.0f} samples/s"
-        )
-
-    total = time.time() - start_time
-    print(f"\n--- Single Machine Finished ---")
-    print(f"Total time     : {total:.2f}s")
-    print(f"Avg time/epoch : {total / NUM_EPOCHS:.2f}s")
+    # [5] Save the final model directly
+    save_path = "resnet18_fashionmnist.pt"
+    torch.save(model.state_dict(), save_path)
+    print(f"Training complete! Model state dictionary saved to {save_path}")
 
 if __name__ == "__main__":
-    train_single_machine()
+    train()

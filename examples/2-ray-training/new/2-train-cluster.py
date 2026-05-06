@@ -66,9 +66,6 @@ if __name__ == "__main__":
             "env_vars": {
                 "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
                 "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
-                # "NCCL_IB_DISABLE":    "1",
-                # "NCCL_P2P_DISABLE":   "1",
-                # "RAY_TRAIN_WORKER_GROUP_START_TIMEOUT_S": "300",
             }
         },
     )
@@ -80,7 +77,6 @@ if __name__ == "__main__":
     trainer = ray.train.torch.TorchTrainer(
         train_func,
         scaling_config=scaling_config,
-        # run_config=ray.train.RunConfig(storage_path="s3://..."), # Enable if multi-node
     )
     result = trainer.fit()
 
