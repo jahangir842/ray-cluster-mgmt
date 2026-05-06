@@ -1,4 +1,3 @@
-import os
 import time
 import torch
 from torch.nn import CrossEntropyLoss
@@ -8,51 +7,75 @@ from torchvision.models import resnet18
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 
+# ─────────────────────────────────────────────
+# BENCHMARK PARAMETERS  (must match cluster script)
+# ─────────────────────────────────────────────
+NUM_EPOCHS        = 3
+GLOBAL_BATCH_SIZE = 1024   # same effective batch as 8 workers × 128
+LR                = 0.001
+NUM_CLASSES       = 10
+DATA_DIR          = "/tmp/fashion_mnist_data"
+# ─────────────────────────────────────────────
+
 def train_single_machine():
-    # 1. Device Detection: Automatically use the local GPU if it exists
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"--- Starting Single Machine Training on: {device.type.upper()} ---")
-    
+    print(f"--- Single Machine Benchmark on: {device.type.upper()} ---")
+    print(f"    Global batch size : {GLOBAL_BATCH_SIZE}")
+    print(f"    Epochs            : {NUM_EPOCHS}")
+
     start_time = time.time()
-    
-    # 2. Model Setup
-    model = resnet18(num_classes=10)
-    model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-    
-    # Manually push the massive model onto the GPU's memory
+
+    # Model
+    model = resnet18(num_classes=NUM_CLASSES)
+    model.conv1 = torch.nn.Conv2d(
+        1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+    )
     model = model.to(device)
-    
+
     criterion = CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=0.001)
+    optimizer = Adam(model.parameters(), lr=LR)
 
-    # 3. Data Setup
+    # Data  — full 60k samples, batch = GLOBAL_BATCH_SIZE
     transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
-    data_dir = "/tmp/fashion_mnist_data" 
-    train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
-    
-    # Standard PyTorch Dataloader (No Ray Magic)
-    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+    train_data = FashionMNIST(
+        root=DATA_DIR, train=True, download=True, transform=transform
+    )
+    train_loader = DataLoader(
+        train_data,
+        batch_size=GLOBAL_BATCH_SIZE,   # ← equalized to cluster's global batch
+        shuffle=True,
+        num_workers=4,
+        pin_memory=(device.type == "cuda"),
+    )
 
-    # 4. Training Loop (3 Epochs)
-    for epoch in range(3):
+    steps_per_epoch = len(train_loader)
+    print(f"    Steps per epoch   : {steps_per_epoch}")
+
+    # Training loop
+    for epoch in range(NUM_EPOCHS):
         model.train()
-        
+        epoch_start = time.time()
+
         for images, labels in train_loader:
-            # Manually push every single batch of images onto the GPU
             images, labels = images.to(device), labels.to(device)
-            
             outputs = model(images)
             loss = criterion(outputs, labels)
-            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        print(f"Epoch {epoch} Complete - Final Batch Loss: {loss.item():.4f}")
+        epoch_time = time.time() - epoch_start
+        print(
+            f"Epoch {epoch} | loss: {loss.item():.4f} | "
+            f"time: {epoch_time:.2f}s | "
+            f"throughput: {len(train_data)/epoch_time:.0f} samples/s"
+        )
 
-    duration = time.time() - start_time
-    print("--- Training Finished Successfully! ---")
-    print(f"Total Time: {duration:.2f} seconds")
+    total_time = time.time() - start_time
+    print("--- Single Machine Training Finished ---")
+    print(f"Total time : {total_time:.2f}s")
+    print(f"Avg time/epoch : {total_time/NUM_EPOCHS:.2f}s")
+
 
 if __name__ == "__main__":
     train_single_machine()

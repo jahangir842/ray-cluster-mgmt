@@ -1,4 +1,4 @@
-import os
+import time
 import ray
 import torch
 from torch.nn import CrossEntropyLoss
@@ -9,67 +9,116 @@ from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 import ray.train.torch
 
-def train_func():
-    print(f"--- Worker {ray.train.get_context().get_world_rank()} starting on GPU ---")
-    
-    # Model Setup
-    model = resnet18(num_classes=10)
-    model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-    
-    # [1] Ray Magic: Because use_gpu=True, this automatically moves the model to the GPU!
-    model = ray.train.torch.prepare_model(model)
-    
-    criterion = CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=0.001)
+# ─────────────────────────────────────────────
+# BENCHMARK PARAMETERS  (must match single-machine script)
+# ─────────────────────────────────────────────
+NUM_EPOCHS         = 3
+NUM_WORKERS        = 8          # one per GPU node
+PER_WORKER_BATCH   = 128        # 8 × 128 = 1024 global batch  ← same as single machine
+LR                 = 0.001      # identical LR (same global batch size → no LR scaling needed)
+NUM_CLASSES        = 10
+DATA_DIR           = "/tmp/fashion_mnist_data"
+# ─────────────────────────────────────────────
 
-    # Data Setup
+def train_func():
+    rank       = ray.train.get_context().get_world_rank()
+    world_size = ray.train.get_context().get_world_size()
+
+    if rank == 0:
+        print(f"--- Cluster Benchmark | {world_size} workers | "
+              f"per-worker batch: {PER_WORKER_BATCH} | "
+              f"global batch: {world_size * PER_WORKER_BATCH} ---")
+
+    # Model — Ray moves it to the correct GPU automatically
+    model = resnet18(num_classes=NUM_CLASSES)
+    model.conv1 = torch.nn.Conv2d(
+        1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+    )
+    model = ray.train.torch.prepare_model(model)
+
+    criterion = CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=LR)
+
+    # Data — DistributedSampler shards 60k samples across all workers
+    # Each worker sees 60k / NUM_WORKERS = 7500 samples per epoch
+    # Total gradient steps per epoch = 60k / (NUM_WORKERS × PER_WORKER_BATCH) ≈ 59
     transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
-    data_dir = "/tmp/fashion_mnist_data" 
-    train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_data, batch_size=2048, shuffle=True)
-    
-    # [2] Ray Magic: This automatically moves the image batches to the GPU during training!
+    train_data = FashionMNIST(
+        root=DATA_DIR, train=True, download=True, transform=transform
+    )
+    train_loader = DataLoader(
+        train_data,
+        batch_size=PER_WORKER_BATCH,    # ← per-worker batch
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+    )
+    # prepare_data_loader adds DistributedSampler + moves batches to GPU
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
 
-    # Training Loop (3 Epochs)
-    for epoch in range(3):
-        if ray.train.get_context().get_world_size() > 1:
-            train_loader.sampler.set_epoch(epoch)
+    for epoch in range(NUM_EPOCHS):
+        # Required so each epoch gets a different shuffle across workers
+        train_loader.sampler.set_epoch(epoch)
+
+        model.train()
+        epoch_start = time.time()
 
         for images, labels in train_loader:
-            # We don't even need to write images.to("cuda") because prepare_data_loader did it.
+            # No .to(device) needed — prepare_data_loader handles it
             outputs = model(images)
             loss = criterion(outputs, labels)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        metrics = {"loss": loss.item(), "epoch": epoch}
-        ray.train.report(metrics)
-        
-        if ray.train.get_context().get_world_rank() == 0:
-            print(f"Epoch {epoch} Complete - Loss: {loss.item():.4f}")
+        epoch_time = time.time() - epoch_start
+
+        # Report from every worker; Ray aggregates automatically
+        ray.train.report({
+            "epoch":      epoch,
+            "loss":       loss.item(),
+            "epoch_time": epoch_time,
+            # Throughput: full dataset / wall-clock epoch time (rank-0 perspective)
+            "throughput": len(train_data) / epoch_time,
+        })
+
+        if rank == 0:
+            print(
+                f"Epoch {epoch} | loss: {loss.item():.4f} | "
+                f"time: {epoch_time:.2f}s | "
+                f"throughput: {len(train_data)/epoch_time:.0f} samples/s"
+            )
+
 
 if __name__ == "__main__":
     ray.init(
-        address="auto", 
+        address="auto",
         runtime_env={
             "env_vars": {
-                # Tell NCCL: "Look for enp0s31f6 first. If you don't have it, use eno1."
                 "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
-                "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1" 
+                "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
             }
-        }
+        },
     )
 
-    # [3] THE BIG UPGRADE: Tell Ray to use 8 workers and demand 1 GPU for each
-    scaling_config = ray.train.ScalingConfig(num_workers=7,   use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(
+        num_workers=NUM_WORKERS,
+        use_gpu=True,
+    )
+
     trainer = ray.train.torch.TorchTrainer(
         train_func,
         scaling_config=scaling_config,
     )
-    
-    print("--- Starting GPU-Accelerated ResNet18 Training ---")
+
+    total_start = time.time()
+    print("--- Starting Cluster Benchmark ---")
     result = trainer.fit()
-    print("--- GPU Training Finished Successfully! ---")
+    total_time = time.time() - total_start
+
+    print("--- Cluster Training Finished ---")
+    print(f"Total time     : {total_time:.2f}s")
+    print(f"Avg time/epoch : {total_time/NUM_EPOCHS:.2f}s")
+    print(f"Best result    : {result.metrics}")
+
     ray.shutdown()
