@@ -63,8 +63,8 @@ if __name__ == "__main__":
         },
     )
 
-    # [4] Configure scaling (Set to 6 to use your 6x RTX 3090s)
-    scaling_config = ray.train.ScalingConfig(num_workers=6, use_gpu=True)
+    # [4] Configure scaling 
+    scaling_config = ray.train.ScalingConfig(num_workers=7, use_gpu=True)
 
     # [5] Launch distributed training job
     trainer = ray.train.torch.TorchTrainer(
@@ -89,4 +89,4 @@ if __name__ == "__main__":
     seconds = elapsed_time % 60
     
     print(f"\n--- Cluster Training completed in {minutes}m {seconds:.2f}s ---")
-    print("Demo complete! (Model was not saved to avoid shared storage requirements).")
+    print("Training complete!")
