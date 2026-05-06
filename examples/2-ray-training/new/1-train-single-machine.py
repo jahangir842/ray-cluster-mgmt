@@ -42,7 +42,7 @@ def train():
     # Start the timer!
     start_time = time.time()
     
-    for epoch in range(10):
+    for epoch in range(2):
         model.train()
         running_loss = 0.0
         
