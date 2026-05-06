@@ -63,8 +63,8 @@ if __name__ == "__main__":
         },
     )
 
-    # [4] Configure scaling (Set to 2 to use your 2x RTX 3090s)
-    scaling_config = ray.train.ScalingConfig(num_workers=2, use_gpu=True)
+    # [4] Configure scaling (Set to 6 to use your 6x RTX 3090s)
+    scaling_config = ray.train.ScalingConfig(num_workers=6, use_gpu=True)
 
     # [5] Launch distributed training job
     trainer = ray.train.torch.TorchTrainer(
