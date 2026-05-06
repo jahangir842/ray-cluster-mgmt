@@ -20,7 +20,7 @@ from torchvision.models import resnet50
 #                    → 32×5 = 160 per update
 # ─────────────────────────────────────────────
 BATCH_SIZE       = 32          # per-GPU batch — safe on 24GB GPU
-GRAD_ACCUM_STEPS = 5           # simulate 5 workers: 32×5=160 effective batch
+GRAD_ACCUM_STEPS = 6           # simulate 6 workers: 32×6=192 effective batch
 NUM_EPOCHS       = 3
 LR               = 0.001
 NUM_CLASSES      = 10
