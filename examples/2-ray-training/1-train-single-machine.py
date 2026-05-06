@@ -11,7 +11,7 @@ from torchvision.transforms import ToTensor, Normalize, Compose
 # BENCHMARK PARAMETERS  (must match cluster script)
 # ─────────────────────────────────────────────
 NUM_EPOCHS        = 3
-GLOBAL_BATCH_SIZE = 1024   # same effective batch as 8 workers × 128
+GLOBAL_BATCH_SIZE = 640   # same effective batch as 8 workers × 128
 LR                = 0.001
 NUM_CLASSES       = 10
 DATA_DIR          = "/tmp/fashion_mnist_data"

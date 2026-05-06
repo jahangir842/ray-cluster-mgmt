@@ -13,8 +13,8 @@ import ray.train.torch
 # BENCHMARK PARAMETERS  (must match single-machine script)
 # ─────────────────────────────────────────────
 NUM_EPOCHS         = 3
-NUM_WORKERS        = 7          # one per GPU node
-PER_WORKER_BATCH   = 147        # 7 × 128 = 896 global batch  ← same as single machine
+NUM_WORKERS        = 5          # one per GPU node
+PER_WORKER_BATCH   = 128       # 5 × 128 = 640 global batch  ← same as single machine
 LR                 = 0.001      # identical LR (same global batch size → no LR scaling needed)
 NUM_CLASSES        = 10
 DATA_DIR           = "/tmp/fashion_mnist_data"
