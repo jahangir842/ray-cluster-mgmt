@@ -95,9 +95,12 @@ if __name__ == "__main__":
     address="auto",
     runtime_env={
         "env_vars": {
-            "NCCL_SOCKET_IFNAME":                   "enp0s31f6,eno1",
-            "GLOO_SOCKET_IFNAME":                   "enp0s31f6,eno1",
-            "RAY_TRAIN_WORKER_GROUP_START_TIMEOUT_S": "300",  # ← 5 min timeout
+            "NCCL_SOCKET_IFNAME":    "enp0s31f6,eno1",
+            "GLOO_SOCKET_IFNAME":    "enp0s31f6,eno1",
+            "NCCL_DEBUG":            "INFO",   # ← shows exactly where NCCL hangs
+            "NCCL_IB_DISABLE":       "1",      # ← disable InfiniBand (you're on Ethernet)
+            "NCCL_P2P_DISABLE":      "1",      # ← disable GPU P2P (cross-node, not needed)
+            "RAY_TRAIN_WORKER_GROUP_START_TIMEOUT_S": "300",
         }
     },
 )
