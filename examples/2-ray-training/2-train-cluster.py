@@ -14,7 +14,7 @@ import ray.train.torch
 # ─────────────────────────────────────────────
 NUM_EPOCHS         = 3
 NUM_WORKERS        = 7          # one per GPU node
-PER_WORKER_BATCH   = 128        # 7 × 128 = 896 global batch  ← same as single machine
+PER_WORKER_BATCH   = 147        # 7 × 128 = 896 global batch  ← same as single machine
 LR                 = 0.001      # identical LR (same global batch size → no LR scaling needed)
 NUM_CLASSES        = 10
 DATA_DIR           = "/tmp/fashion_mnist_data"
@@ -92,14 +92,15 @@ def train_func():
 
 if __name__ == "__main__":
     ray.init(
-        address="auto",
-        runtime_env={
-            "env_vars": {
-                "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
-                "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
-            }
-        },
-    )
+    address="auto",
+    runtime_env={
+        "env_vars": {
+            "NCCL_SOCKET_IFNAME":                   "enp0s31f6,eno1",
+            "GLOO_SOCKET_IFNAME":                   "enp0s31f6,eno1",
+            "RAY_TRAIN_WORKER_GROUP_START_TIMEOUT_S": "300",  # ← 5 min timeout
+        }
+    },
+)
 
     scaling_config = ray.train.ScalingConfig(
         num_workers=NUM_WORKERS,
