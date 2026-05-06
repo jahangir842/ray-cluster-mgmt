@@ -5,7 +5,7 @@ import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet18
+from torchvision.models import resnet152
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 
@@ -15,7 +15,7 @@ def train():
     print(f"Training on device: {device}")
 
     # [2] Initialize Model
-    model = resnet18(num_classes=10)
+    model = resnet152(num_classes=10)
     # Modify the first conv layer to accept grayscale images (1 channel)
     model.conv1 = torch.nn.Conv2d(
         1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
@@ -63,7 +63,7 @@ def train():
 
         # Print metrics at the end of each epoch
         avg_loss = running_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/10] - Loss: {avg_loss:.4f}")
+        print(f"Epoch [{epoch+1}/2] - Loss: {avg_loss:.4f}")
 
     # Stop the timer!
     end_time = time.time()
