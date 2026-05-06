@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time  # Added time module
 import torch
 import ray
 from torch.nn import CrossEntropyLoss
@@ -31,8 +32,8 @@ def train_func():
     # [2] Prepare dataloader
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
 
-    # Training
-    for epoch in range(10):
+    # Training (Reduced to 2 epochs)
+    for epoch in range(2):
         if ray.train.get_context().get_world_size() > 1:
             train_loader.sampler.set_epoch(epoch)
 
@@ -43,20 +44,12 @@ def train_func():
             loss.backward()
             optimizer.step()
 
-        # [3] Report metrics and checkpoint
+        # [3] ONLY report metrics (Checkpointing removed to avoid storage error)
         metrics = {"loss": loss.item(), "epoch": epoch}
-        with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
-            torch.save(
-                model.module.state_dict(),
-                os.path.join(temp_checkpoint_dir, "model.pt")
-            )
-            ray.train.report(
-                metrics,
-                checkpoint=ray.train.Checkpoint.from_directory(temp_checkpoint_dir),
-            )
+        ray.train.report(metrics)
             
         if ray.train.get_context().get_world_rank() == 0:
-            print(metrics)
+            print(f"Rank 0 reporting -> Epoch: {epoch+1}/2, Loss: {loss.item():.4f}")
 
 if __name__ == "__main__":
     # Connect to your existing Ray cluster
@@ -70,22 +63,30 @@ if __name__ == "__main__":
         },
     )
 
-    # [4] Configure scaling and resource requirements
-    scaling_config = ray.train.ScalingConfig(num_workers=6, use_gpu=True)
+    # [4] Configure scaling (Set to 2 to use your 2x RTX 3090s)
+    scaling_config = ray.train.ScalingConfig(num_workers=2, use_gpu=True)
 
     # [5] Launch distributed training job
     trainer = ray.train.torch.TorchTrainer(
         train_func,
         scaling_config=scaling_config,
     )
+    
+    print("Starting cluster training demo...")
+    
+    # Start the timer!
+    start_time = time.time()
+    
+    # Run the workload
     result = trainer.fit()
 
-    # [6] Load the trained model
-    with result.checkpoint.as_directory() as checkpoint_dir:
-        model_state_dict = torch.load(os.path.join(checkpoint_dir, "model.pt"))
-        model = resnet18(num_classes=10)
-        model.conv1 = torch.nn.Conv2d(
-            1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
-        )
-        model.load_state_dict(model_state_dict)
-        print("Training complete and model loaded successfully!")
+    # Stop the timer!
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Format the output into minutes and seconds
+    minutes = int(elapsed_time // 60)
+    seconds = elapsed_time % 60
+    
+    print(f"\n--- Cluster Training completed in {minutes}m {seconds:.2f}s ---")
+    print("Demo complete! (Model was not saved to avoid shared storage requirements).")
