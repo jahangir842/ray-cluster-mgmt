@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time  # Added time module
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
@@ -32,11 +33,15 @@ def train():
     data_dir = os.path.join(tempfile.gettempdir(), "data")
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
     
-    # Standard PyTorch DataLoader (no ray.train wrapper needed)
+    # Standard PyTorch DataLoader
     train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
 
-    # [4] Standard Training Loop
+    # [4] Standard Training Loop with Timing
     print("Starting training...")
+    
+    # Start the timer!
+    start_time = time.time()
+    
     for epoch in range(10):
         model.train()
         running_loss = 0.0
@@ -60,10 +65,19 @@ def train():
         avg_loss = running_loss / len(train_loader)
         print(f"Epoch [{epoch+1}/10] - Loss: {avg_loss:.4f}")
 
+    # Stop the timer!
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Format the output into minutes and seconds
+    minutes = int(elapsed_time // 60)
+    seconds = elapsed_time % 60
+    print(f"\n--- Training completed in {minutes}m {seconds:.2f}s ---")
+
     # [5] Save the final model directly
     save_path = "resnet18_fashionmnist.pt"
     torch.save(model.state_dict(), save_path)
-    print(f"Training complete! Model state dictionary saved to {save_path}")
+    print(f"Model state dictionary saved to {save_path}")
 
 if __name__ == "__main__":
     train()
