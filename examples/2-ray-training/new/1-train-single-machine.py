@@ -34,7 +34,7 @@ def train():
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
     
     # Standard PyTorch DataLoader
-    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=2048, shuffle=True)
 
     # [4] Standard Training Loop with Timing
     print("Starting training...")

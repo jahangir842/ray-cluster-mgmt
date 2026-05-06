@@ -27,7 +27,7 @@ def train_func():
     transform = Compose([ToTensor(), Normalize((0.28604,), (0.32025,))])
     data_dir = os.path.join(tempfile.gettempdir(), "data")
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=2048, shuffle=True)
     
     # [2] Prepare dataloader
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
