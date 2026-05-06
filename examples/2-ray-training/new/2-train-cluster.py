@@ -64,7 +64,7 @@ if __name__ == "__main__":
     )
 
     # [4] Configure scaling 
-    scaling_config = ray.train.ScalingConfig(num_workers=7, use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(num_workers=2, use_gpu=True)
 
     # [5] Launch distributed training job
     trainer = ray.train.torch.TorchTrainer(
