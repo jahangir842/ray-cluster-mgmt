@@ -140,7 +140,7 @@ def train_func_distributed():
         print("  - TensorBoard logs in /mnt/cluster_storage/logs/distributed/")
 
 # Configure scaling and resource requirements for distributed training
-scaling_config = ray.train.ScalingConfig(num_workers=2, use_gpu=True)
+scaling_config = ray.train.ScalingConfig(num_workers=6, use_gpu=True)
 
 # Create a unique experiment name for this profiling run
 experiment_name = f"profiling_run_{uuid.uuid4().hex[:8]}"
