@@ -6,7 +6,16 @@ from torch.distributed.device_mesh import init_device_mesh
 import ray.train.torch
 from transformers import AutoModelForCausalLM, AutoConfig
 
-ray.init(address="auto", ignore_reinit_error=True)
+ray.init(
+    address="auto", 
+    ignore_reinit_error=True,
+    runtime_env={
+        "env_vars": {
+            "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
+            "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
+        }
+    }
+)
 
 def train_func(config):
     device = ray.train.torch.get_device()
