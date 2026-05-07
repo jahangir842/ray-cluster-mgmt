@@ -17,7 +17,7 @@ def train_func(config):
     device_mesh = init_device_mesh("cuda", (ray.train.get_context().get_world_size(),))
     
     # Load Model Configuration only
-    model_id = "meta-llama/Meta-Llama-3.1-8b-instruct"
+    model_id = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
     model_config = AutoConfig.from_pretrained(model_id)
     
     # Initialize model on 'meta' device to prevent OOM
