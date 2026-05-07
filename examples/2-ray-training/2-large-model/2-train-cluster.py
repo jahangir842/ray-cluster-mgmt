@@ -44,7 +44,7 @@ def train_func(config):
 scaling_config = ray.train.ScalingConfig(
     num_workers=7, 
     use_gpu=True,
-    resources_per_worker={"GPU": 1, "CPU": 4}
+    resources_per_worker={"GPU": 1, "CPU": 16}
 )
 
 # 3. Launch Trainer
