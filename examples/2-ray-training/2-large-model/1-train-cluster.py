@@ -81,7 +81,7 @@ def train_func(config):
 
 if __name__ == "__main__":
     scaling_config = ray.train.ScalingConfig(
-        num_workers=7, 
+        num_workers=6, 
         use_gpu=True,
         resources_per_worker={"GPU": 1, "CPU": 16}
     )
