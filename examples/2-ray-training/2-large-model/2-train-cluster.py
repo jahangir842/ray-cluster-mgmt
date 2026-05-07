@@ -6,7 +6,6 @@ import ray.train.torch
 from transformers import AutoModelForCausalLM, AutoConfig
 
 # 1. Connect to the existing cluster
-# This uses the environment variables already detected by your terminal
 ray.init(address="auto", ignore_reinit_error=True)
 
 def train_func(config):
@@ -18,7 +17,7 @@ def train_func(config):
     device_mesh = init_device_mesh("cuda", (ray.train.torch.get_world_size(),))
     
     # Load Model Configuration only
-    model_id = "meta-llama/Meta-Llama-3-8B"
+    model_id = "meta-llama/Meta-Llama-3.1-8b-instruct"
     model_config = AutoConfig.from_pretrained(model_id)
     
     # Initialize model on 'meta' device to prevent OOM
