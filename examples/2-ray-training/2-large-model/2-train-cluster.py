@@ -10,7 +10,7 @@ ray.init(address="auto", ignore_reinit_error=True)
 
 def train_func(config):
     # Initialize Distributed Environment
-    device = torch.device(f"cuda:{ray.train.torch.get_device()}")
+    device = ray.train.torch.get_device()
     
     # Create Device Mesh (Total 7 GPUs)
     # This mesh is required by FSDP2 for sharding strategy
