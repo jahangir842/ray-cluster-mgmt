@@ -1,56 +1,85 @@
 import ray
+import time
 import torch
 from torch.distributed.fsdp import fully_shard
 from torch.distributed.device_mesh import init_device_mesh
 import ray.train.torch
 from transformers import AutoModelForCausalLM, AutoConfig
 
-# 1. Connect to the existing cluster
 ray.init(address="auto", ignore_reinit_error=True)
 
 def train_func(config):
-    # Initialize Distributed Environment
     device = ray.train.torch.get_device()
+    world_size = ray.train.get_context().get_world_size()
+    rank = ray.train.get_context().get_world_rank()
     
-    # Create Device Mesh (Total 7 GPUs)
-    # This mesh is required by FSDP2 for sharding strategy
-    device_mesh = init_device_mesh("cuda", (ray.train.get_context().get_world_size(),))
+    # 1. Initialize the Device Mesh
+    device_mesh = init_device_mesh("cuda", (world_size,))
     
-    # Load Model Configuration only
+    # 2. Load Model Config
     model_id = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
     model_config = AutoConfig.from_pretrained(model_id)
     
-    # Initialize model on 'meta' device to prevent OOM
-    # This creates the structure without allocating the 15GB+ VRAM yet
+    # 3. Create Meta Model and Shard it
     with torch.device("meta"):
         model = AutoModelForCausalLM.from_config(model_config)
 
-    # Apply FSDP2 Sharding to Llama layers
-    # Sharding submodules (LlamaDecoderLayer) is crucial for memory efficiency
     for module in model.modules():
         if "LlamaDecoderLayer" in str(type(module)):
             fully_shard(module, mesh=device_mesh)
-    
-    # Shard the final top-level model
     fully_shard(model, mesh=device_mesh)
 
-    # Note: To start training, you must now load weights into these shards
-    # e.g., model.from_pretrained(model_id, low_cpu_mem_usage=True)
+    # 4. Allocate Real VRAM and Initialize Random Weights for Benchmarking
+    model = model.to_empty(device=device)
+    with torch.no_grad():
+        for param in model.parameters():
+            param.uniform_(-0.01, 0.01)
+
+    print(f"Model successfully sharded and initialized on rank {rank}")
+
+    # --- THE BENCHMARKING LOOP ---
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     
-    print(f"Model successfully sharded on rank {ray.train.get_context().get_world_rank()}")
+    # Create a heavy dummy workload (Batch size 2, Sequence length 512 tokens)
+    batch_size = 2
+    seq_length = 512
+    dummy_input = torch.randint(0, model_config.vocab_size, (batch_size, seq_length), device=device)
+    dummy_labels = dummy_input.clone()
 
-# 2. Configure Scaling
-# We use all 7 GPUs as requested
-scaling_config = ray.train.ScalingConfig(
-    num_workers=7, 
-    use_gpu=True,
-    resources_per_worker={"GPU": 1, "CPU": 16}
-)
+    if rank == 0:
+        print("\nStarting 8B Parameter FSDP Benchmark...")
+        
+    start_time = time.time()
+    
+    # Run 5 heavy training steps
+    for step in range(5): 
+        optimizer.zero_grad()
+        
+        # Forward pass
+        outputs = model(dummy_input, labels=dummy_labels)
+        loss = outputs.loss
+        
+        # Backward pass (This triggers the massive FSDP network syncing)
+        loss.backward()
+        optimizer.step()
+        
+        if rank == 0:
+            print(f"Step {step + 1}/5 complete. Loss: {loss.item():.4f}")
 
-# 3. Launch Trainer
-trainer = ray.train.torch.TorchTrainer(
-    train_loop_per_worker=train_func,
-    scaling_config=scaling_config
-)
+    if rank == 0:
+        total_time = time.time() - start_time
+        print(f"\n--- Benchmark completed in {total_time:.2f} seconds ---")
 
-result = trainer.fit()
+if __name__ == "__main__":
+    scaling_config = ray.train.ScalingConfig(
+        num_workers=7, 
+        use_gpu=True,
+        resources_per_worker={"GPU": 1, "CPU": 16}
+    )
+
+    trainer = ray.train.torch.TorchTrainer(
+        train_loop_per_worker=train_func,
+        scaling_config=scaling_config
+    )
+
+    result = trainer.fit()
