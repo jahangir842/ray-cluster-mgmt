@@ -14,7 +14,7 @@ def train_func(config):
     
     # Create Device Mesh (Total 7 GPUs)
     # This mesh is required by FSDP2 for sharding strategy
-    device_mesh = init_device_mesh("cuda", (ray.train.torch.get_world_size(),))
+    device_mesh = init_device_mesh("cuda", (ray.train.get_context().get_world_size(),))
     
     # Load Model Configuration only
     model_id = "meta-llama/Meta-Llama-3.1-8b-instruct"
@@ -37,7 +37,7 @@ def train_func(config):
     # Note: To start training, you must now load weights into these shards
     # e.g., model.from_pretrained(model_id, low_cpu_mem_usage=True)
     
-    print(f"Model successfully sharded on rank {ray.train.torch.get_rank()}")
+    print(f"Model successfully sharded on rank {ray.train.get_context().get_world_rank()}")
 
 # 2. Configure Scaling
 # We use all 7 GPUs as requested
