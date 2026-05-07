@@ -7,3 +7,5 @@ huggingface_hub
 tensorboard
 sentencepiece
 protobuf
+
+matplotlib
