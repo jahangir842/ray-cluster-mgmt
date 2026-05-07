@@ -23,6 +23,17 @@ from torchvision.transforms import Compose, ToTensor, Normalize
 import tempfile
 import uuid
 
+ray.init(
+    address="auto", 
+    ignore_reinit_error=True,
+    runtime_env={
+        "env_vars": {
+            "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
+            "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
+        }
+    }
+)
+
 storage_path = "/mnt/cluster_storage/"
 
 def train_func_distributed():
