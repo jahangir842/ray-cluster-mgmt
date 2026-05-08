@@ -46,6 +46,22 @@ from torch.distributed.checkpoint.stateful import Stateful
 # Enable Ray Train V2 for the latest train APIs
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
+# ── NCCL Network Fix ──────────────────────────────────────────────────────────
+# These must be set before ray.init so every worker inherits them.
+# Prevents NCCL from picking the Docker bridge (172.18.x.x) over the real
+# cluster network (192.168.3.x).
+#
+# NCCL_SOCKET_IFNAME: exclude loopback and any docker/virbr interfaces so
+#   NCCL auto-selects your physical NIC (eth0 / enp* / etc).
+# NCCL_IB_DISABLE:    disable InfiniBand — this cluster uses Ethernet.
+# GLOO_SOCKET_IFNAME: same exclusion for the Gloo rendezvous backend.
+_NCCL_ENV = {
+    "NCCL_SOCKET_IFNAME": "^lo,docker,virbr",
+    "NCCL_IB_DISABLE": "1",
+    "GLOO_SOCKET_IFNAME": "^lo,docker,virbr",
+}
+os.environ.update(_NCCL_ENV)
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -327,13 +343,21 @@ def train_func(config):
 # ── Launch Training ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Connect to the existing cluster and propagate NCCL env vars to all workers
+    # via runtime_env — this is the only way to guarantee they are set before
+    # any NCCL socket operation on every node.
+    ray.init(
+        address="auto",
+        runtime_env={"env_vars": _NCCL_ENV},
+    )
+
     scaling_config = ray.train.ScalingConfig(
-        num_workers=2,
+        num_workers=8,
         use_gpu=True,
     )
 
     train_loop_config = {
-        "epochs": 5,
+        "epochs": 2,
         "learning_rate": 0.001,
         "batch_size": 64,
     }
