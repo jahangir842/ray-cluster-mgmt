@@ -16,9 +16,8 @@ from torch.utils.data import DataLoader
 
 # Line 14-15 — fix imports
 from torchvision.models import vit_h_14, ViT_H_14_Weights
-
 from torchvision.datasets import FashionMNIST
-from torchvision.transforms import ToTensor, Normalize, Compose
+from torchvision.transforms import Resize, ToTensor, Normalize, Compose
 
 from torch.distributed.fsdp import (
     fully_shard,
@@ -260,7 +259,12 @@ def train_func(config):
         start_epoch = latest_epoch + 1 if latest_epoch is not None else 0
         logger.info(f"Resuming training from epoch {start_epoch}")
 
-    transform = Compose([ToTensor(), Normalize((0.5,), (0.5,))])
+    transform = Compose([
+        Resize((518, 518)),          # ViT-H/14 requires 518×518
+        ToTensor(),
+        Normalize((0.5,), (0.5,)),
+    ])
+
     data_dir = os.path.join(tempfile.gettempdir(), "data")
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
     train_loader = DataLoader(
