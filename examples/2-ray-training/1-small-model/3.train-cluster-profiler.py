@@ -87,7 +87,7 @@ def train_func_distributed():
     ) as prof:
 
         # Training loop
-        for epoch in range(10):
+        for epoch in range(2):
             # [4] Set epoch for distributed sampler to ensure proper shuffling
             # across all workers in each epoch.
             # ==============================================================
