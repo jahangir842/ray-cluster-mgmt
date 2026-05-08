@@ -376,11 +376,16 @@ if __name__ == "__main__":
     model.load_state_dict(state_dict)
     model.eval()
 
-    transform = Compose([ToTensor(), Normalize((0.5,), (0.5,))])
+    transform = Compose([
+        Resize((518, 518)),
+        ToTensor(),
+        Normalize((0.5,), (0.5,)),
+    ])
     test_data = FashionMNIST(root=".", train=False, download=True, transform=transform)
 
     with torch.no_grad():
-        out = model(test_data.data[0].reshape(1, 1, 28, 28).float())
+        img = transform(test_data.data[0].unsqueeze(0).float() / 255.0).unsqueeze(0)
+        out = model(img)
         predicted_label = out.argmax().item()
         test_label = test_data.targets[0].item()
         print(f"{predicted_label=} {test_label=}")
