@@ -14,7 +14,9 @@ from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from torchvision.models import ViT_H_14_Weights
+# Line 14-15 — fix imports
+from torchvision.models import vit_h_14, ViT_H_14_Weights
+
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 
@@ -54,25 +56,25 @@ def init_model() -> torch.nn.Module:
         torch.nn.Module: Configured ViT model
     """
     logger.info("Initializing Vision Transformer model...")
-
-    model = ViT_H_14_Weights(
-        image_size=28,
-        patch_size=7,
-        num_layers=10,
-        num_heads=2,
-        hidden_dim=128,
-        mlp_dim=128,
-        num_classes=10,
-    )
+    model = vit_h_14(weights=ViT_H_14_Weights.DEFAULT)
+    # model = VisionTransformer(
+    #     image_size=28,
+    #     patch_size=7,
+    #     num_layers=10,
+    #     num_heads=2,
+    #     hidden_dim=128,
+    #     mlp_dim=128,
+    #     num_classes=10,
+    # )
 
     # Modify patch embedding for grayscale images (1 channel instead of 3)
     model.conv_proj = torch.nn.Conv2d(
         in_channels=1,
-        out_channels=128,
-        kernel_size=7,
-        stride=7,
+        out_channels=1280,
+        kernel_size=14,
+        stride=14,
     )
-
+    model.heads = torch.nn.Linear(1280, 10)
     return model
 
 # ── FSDP2 Sharding ────────────────────────────────────────────────────────────
