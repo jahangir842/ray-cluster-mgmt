@@ -47,18 +47,12 @@ from torch.distributed.checkpoint.stateful import Stateful
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
 # ── NCCL Network Fix ──────────────────────────────────────────────────────────
-# These must be set before ray.init so every worker inherits them.
-# Prevents NCCL from picking the Docker bridge (172.18.x.x) over the real
-# cluster network (192.168.3.x).
-#
-# NCCL_SOCKET_IFNAME: exclude loopback and any docker/virbr interfaces so
-#   NCCL auto-selects your physical NIC (eth0 / enp* / etc).
-# NCCL_IB_DISABLE:    disable InfiniBand — this cluster uses Ethernet.
-# GLOO_SOCKET_IFNAME: same exclusion for the Gloo rendezvous backend.
+# Pin NCCL and Gloo to the physical NICs so they never accidentally use the
+# Docker bridge (172.18.x.x). Adjust the names if your nodes use different
+# NICs — run `ip link show` on a node to check.
 _NCCL_ENV = {
-    "NCCL_SOCKET_IFNAME": "^lo,docker,virbr",
-    "NCCL_IB_DISABLE": "1",
-    "GLOO_SOCKET_IFNAME": "^lo,docker,virbr",
+    "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
+    "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
 }
 os.environ.update(_NCCL_ENV)
 
@@ -348,6 +342,7 @@ if __name__ == "__main__":
     # any NCCL socket operation on every node.
     ray.init(
         address="auto",
+        ignore_reinit_error=True,
         runtime_env={"env_vars": _NCCL_ENV},
     )
 
