@@ -22,6 +22,7 @@ from torchvision.transforms import Compose, ToTensor, Normalize
 # # Utility imports
 import tempfile
 import uuid
+import time
 
 ray.init(
     address="auto", 
@@ -78,7 +79,7 @@ def train_func_distributed():
 
     with torch.profiler.profile(
         activities=activities,
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+        schedule=torch.profiler.schedule(wait=5, warmup=1, active=2, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler(f'{storage_path}/logs/distributed'),
         record_shapes=True,
         profile_memory=True,
@@ -128,6 +129,10 @@ def train_func_distributed():
     # memory usage patterns across the distributed training job.
     # ==============================================================
     run_name = ray.train.get_context().get_experiment_name()
+
+    # To prevent NFS/Network congestion when multiple workers write simultaneously.
+    time.sleep(world_rank * 2)
+
     prof.export_memory_timeline(
         f"{storage_path}/{run_name}/rank{world_rank}_memory_profile.html"
     )
