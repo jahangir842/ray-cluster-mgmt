@@ -15,7 +15,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 
 # Line 14-15 — fix imports
-from torchvision.models import vit_h_14, ViT_H_14_Weights
+from torchvision.models import vit_h_14, ViT_H_14_Weights, vit_l_32, ViT_L_32_Weights
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose
 
@@ -56,7 +56,7 @@ def init_model() -> torch.nn.Module:
         torch.nn.Module: Configured ViT model
     """
     logger.info("Initializing Vision Transformer model...")
-    model = vit_h_14(weights=ViT_H_14_Weights.DEFAULT)
+    model = vit_l_32(weights=ViT_L_32_Weights.DEFAULT)
     # model = VisionTransformer(
     #     image_size=28,
     #     patch_size=7,
