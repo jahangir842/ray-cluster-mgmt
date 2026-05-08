@@ -56,7 +56,7 @@ def init_model() -> torch.nn.Module:
         torch.nn.Module: Configured ViT model
     """
     logger.info("Initializing Vision Transformer model...")
-    model = vit_l_32(weights=ViT_L_32_Weights.DEFAULT)
+    model = vit_h_14(weights=ViT_H_14_Weights.DEFAULT)
     # model = VisionTransformer(
     #     image_size=28,
     #     patch_size=7,
@@ -261,7 +261,7 @@ def train_func(config):
         logger.info(f"Resuming training from epoch {start_epoch}")
 
     transform = Compose([
-        Resize((518, 518)),          # ViT-H/14 requires 518×518
+        Resize((224, 224)),          # ViT-H/14 requires 518×518
         ToTensor(),
         Normalize((0.5,), (0.5,)),
     ])
@@ -378,7 +378,7 @@ if __name__ == "__main__":
     model.eval()
 
     transform = Compose([
-        Resize((518, 518)),
+        Resize((224, 224)),
         ToTensor(),
         Normalize((0.5,), (0.5,)),
     ])
