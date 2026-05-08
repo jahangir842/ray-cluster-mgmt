@@ -14,7 +14,7 @@ from torch.nn import CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from torchvision.models import VisionTransformer
+from torchvision.models import ViT_H_14_Weights
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 
@@ -55,7 +55,7 @@ def init_model() -> torch.nn.Module:
     """
     logger.info("Initializing Vision Transformer model...")
 
-    model = VisionTransformer(
+    model = ViT_H_14_Weights(
         image_size=28,
         patch_size=7,
         num_layers=10,
