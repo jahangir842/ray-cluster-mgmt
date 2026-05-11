@@ -42,6 +42,10 @@ _NCCL_ENV = {
     "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
     "RAY_DEDUP_LOGS": "0",
+    "NCCL_DEBUG": "INFO",            # ← verbose NCCL logs
+    "NCCL_DEBUG_SUBSYS": "INIT,NET",
+    "NCCL_IB_TIMEOUT": "30",
+    "NCCL_TIMEOUT": "30",
 }
 os.environ.update(_NCCL_ENV)
 
