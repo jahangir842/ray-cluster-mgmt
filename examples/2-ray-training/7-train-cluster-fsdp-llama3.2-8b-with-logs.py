@@ -274,40 +274,40 @@ def train_func(config):
         epochs = config.get("epochs", 2)
 
         for epoch in range(start_epoch, epochs):
-    if ray.train.get_context().get_world_size() > 1:
-        train_loader.sampler.set_epoch(epoch)
+            if ray.train.get_context().get_world_size() > 1:
+                train_loader.sampler.set_epoch(epoch)
 
-    for batch_idx, input_ids in enumerate(train_loader):
-        # Causal LM: labels = input_ids (predict next token)
-        # The model computes cross-entropy loss internally
-        outputs = model(input_ids=input_ids, labels=input_ids)
-        loss = outputs.loss
+            for batch_idx, input_ids in enumerate(train_loader):
+                # Causal LM: labels = input_ids (predict next token)
+                # The model computes cross-entropy loss internally
+                outputs = model(input_ids=input_ids, labels=input_ids)
+                loss = outputs.loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-        prof.step()
+                prof.step()
 
-        running_loss += loss.item()
-        num_batches += 1
+                running_loss += loss.item()
+                num_batches += 1
 
-        # progress log every 10 batches, rank 0 only
-        if world_rank == 0 and batch_idx % 10 == 0:
-            vram = torch.cuda.memory_allocated() / 1024**3
-            logger.info(
-                f"Epoch {epoch+1}/{epochs} | "
-                f"Batch {batch_idx+1}/{len(train_loader)} | "
-                f"Loss: {loss.item():.4f} | "
-                f"VRAM: {vram:.2f} GB"
-            )
+                # progress log every 10 batches, rank 0 only
+                if world_rank == 0 and batch_idx % 10 == 0:
+                    vram = torch.cuda.memory_allocated() / 1024**3
+                    logger.info(
+                        f"Epoch {epoch+1}/{epochs} | "
+                        f"Batch {batch_idx+1}/{len(train_loader)} | "
+                        f"Loss: {loss.item():.4f} | "
+                        f"VRAM: {vram:.2f} GB"
+                    )
 
-    avg_loss = running_loss / num_batches
-    metrics = {"loss": avg_loss, "perplexity": torch.exp(torch.tensor(avg_loss)).item()}
-    report_metrics_and_save_fsdp_checkpoint(model, optimizer, metrics, epoch)
+            avg_loss = running_loss / num_batches
+            metrics = {"loss": avg_loss, "perplexity": torch.exp(torch.tensor(avg_loss)).item()}
+            report_metrics_and_save_fsdp_checkpoint(model, optimizer, metrics, epoch)
 
-    if world_rank == 0:
-        logger.info(metrics)
+            if world_rank == 0:
+                logger.info(metrics)
 
     run_name = ray.train.get_context().get_experiment_name()
     prof.export_memory_timeline(
