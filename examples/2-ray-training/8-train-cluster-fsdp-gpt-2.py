@@ -2,7 +2,7 @@ import os
 import tempfile
 import uuid
 import logging
-
+from pathlib import Path
 import torch
 import torch.profiler
 import torch.distributed.checkpoint as dcp
@@ -99,10 +99,9 @@ def init_model() -> torch.nn.Module:
     """
     logger.info(f"Initializing GPT-2 from {MODEL_PATH} ...")
     model = GPT2LMHeadModel.from_pretrained(
-        MODEL_PATH,
-        dtype=torch.float16,      # fp16: 3 GB per node
-        local_files_only=True,    # never hit the internet — use local copy
-    )
+        Path(MODEL_PATH),
+        local_files_only=True,
+    ).to(torch.float16)
     return model
 
 
@@ -393,7 +392,7 @@ if __name__ == "__main__":
         f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
     )
 
-    tokenizer = GPT2Tokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    tokenizer = GPT2Tokenizer.from_pretrained(Path(MODEL_PATH), local_files_only=True)
     model = init_model()
     state_dict = torch.load(PATH_TO_FULL_MODEL, map_location="cpu")
     model.load_state_dict(state_dict)
