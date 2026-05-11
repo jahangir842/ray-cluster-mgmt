@@ -349,7 +349,7 @@ if __name__ == "__main__":
     )
 
     scaling_config = ray.train.ScalingConfig(
-        num_workers=8,
+        num_workers=7,
         use_gpu=True,
     )
 
