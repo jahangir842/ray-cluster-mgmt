@@ -43,9 +43,13 @@ _NCCL_ENV = {
 }
 os.environ.update(_NCCL_ENV)
 
-# Set up logging
+# Set up logging — basicConfig ensures INFO level is visible in Ray worker stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
 SEQ_LEN    = 512   # token sequence length per sample
@@ -294,6 +298,8 @@ def train_func(config):
                 num_batches += 1
 
                 # progress log every 10 batches, rank 0 only
+                # using print(flush=True) instead of logger — Ray workers
+                # buffer stdout so flush=True guarantees immediate visibility
                 if world_rank == 0 and batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     print(
@@ -309,7 +315,7 @@ def train_func(config):
             report_metrics_and_save_fsdp_checkpoint(model, optimizer, metrics, epoch)
 
             if world_rank == 0:
-                logger.info(metrics)
+                print(f"Epoch {epoch+1}/{epochs} complete | {metrics}", flush=True)
 
     run_name = ray.train.get_context().get_experiment_name()
     prof.export_memory_timeline(
