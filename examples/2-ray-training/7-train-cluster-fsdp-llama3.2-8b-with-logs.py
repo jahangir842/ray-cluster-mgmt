@@ -13,8 +13,8 @@ import ray.train.torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 
-# Model: LLaMA-3.1-8B-Instruct — 8B parameters, ~96 GB training footprint (model + Adam states)
-# Single 24GB GPU cannot train this. Requires FSDP across multiple GPUs.
+# Model: LLaMA-3.1-8B-Instruct — 8B parameters, ~128 GB training footprint
+# Single 24GB GPU cannot train this. Requires FSDP2 across multiple GPUs.
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from torch.distributed.fsdp import (
@@ -33,9 +33,9 @@ from torch.distributed.checkpoint.state_dict import (
 )
 from torch.distributed.checkpoint.stateful import Stateful
 
-# Enable Ray Train V2 for the latest train APIs
+# Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
-os.environ["RAY_DEDUP_LOGS"] = "0"
+os.environ["RAY_DEDUP_LOGS"] = "0"      # show all logs without deduplication
 
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
@@ -45,7 +45,15 @@ _NCCL_ENV = {
 }
 os.environ.update(_NCCL_ENV)
 
-# Set up logging — basicConfig ensures INFO level is visible in Ray worker stdout
+# Set up logging — Ray Train workers write structured JSON logs to:
+# /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log
+# Watch live with:
+#   LOG=$(ls -t /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log | head -1)
+#   tail -f $LOG | python3 -c "
+#     import sys, json
+#     for line in sys.stdin:
+#       try: d=json.loads(line); print(d['asctime'], f\"[rank {d.get('world_rank','?')}]\", d['message'])
+#       except: print(line, end='')"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -54,17 +62,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
-SEQ_LEN    = 512   # token sequence length per sample
+SEQ_LEN    = 512
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class SyntheticTextDataset(Dataset):
-    """Synthetic token dataset — avoids any download dependency.
+    """Synthetic token dataset — no download needed.
 
-    Generates random token IDs in the model's vocabulary range.
-    Sufficient to demonstrate FSDP2 sharding and distributed training.
-    Replace with a real dataset (e.g. WikiText, OpenWebText) for actual training.
+    Generates random token IDs in LLaMA-3.1's vocabulary range (128256).
+    Demonstrates FSDP2 sharding and distributed training infrastructure.
+    Replace with a real dataset (WikiText, OpenWebText, etc.) for actual training.
     """
     def __init__(self, vocab_size: int, seq_len: int, num_samples: int = 1000):
         self.data = torch.randint(0, vocab_size, (num_samples, seq_len))
@@ -81,23 +89,20 @@ class SyntheticTextDataset(Dataset):
 def init_model() -> torch.nn.Module:
     """Initialize LLaMA-3.1-8B-Instruct for causal language modelling.
 
-    Stats:
+    Memory stats:
         Parameters:      8,030,000,000
-        Model size fp32: ~32.1 GB
-        Model size fp16: ~16.1 GB
-        Adam states:     ~96.4 GB  (3× model in fp32)
-        Total training:  ~128 GB   → cannot fit on a single 24 GB GPU
+        Model size fp16: ~16.1 GB     (loaded directly in fp16)
+        Adam states:     ~96.4 GB     (3x model in fp32, CPU-offloaded)
+        Total training:  ~112 GB      → impossible on a single 24 GB GPU
+        Per-GPU (8-way): ~14 GB       → fits with FSDP2 sharding
 
-    Loaded from local path — no internet download required.
-
-    Returns:
-        torch.nn.Module: LLaMA-3.1-8B-Instruct model
+    Loaded from local path on every node — no internet download.
     """
     logger.info(f"Initializing LLaMA-3.1-8B-Instruct from {MODEL_PATH} ...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_PATH,
-        dtype=torch.float16,         # load in fp16 — halves RAM: 32GB → 16GB per node
-        local_files_only=True,       # never try to download — use local copy
+        dtype=torch.float16,      # fp16: 16 GB RAM per node vs 32 GB for fp32
+        local_files_only=True,    # never hit the internet — use local copy
     )
     return model
 
@@ -105,10 +110,14 @@ def init_model() -> torch.nn.Module:
 # ── FSDP2 Sharding ────────────────────────────────────────────────────────────
 
 def shard_model(model: torch.nn.Module):
-    """Apply FSDP2 sharding to LLaMA-3.1-8B.
+    """Apply FSDP2 sharding to LLaMA-3.1-8B across all ranks.
 
-    LLaMA's transformer blocks live at model.model.layers.
-    Each block is sharded independently, then the full model wrapper is sharded.
+    LLaMA transformer blocks live at model.model.layers.
+    Each block is sharded independently (reshard_after_forward=True),
+    then the outer model wrapper is sharded.
+
+    With CPUOffloadPolicy, Adam optimizer states live in system RAM,
+    not GPU VRAM — critical for fitting an 8B model on 24 GB cards.
     """
     logger.info("Applying FSDP2 sharding to model...")
 
@@ -126,7 +135,6 @@ def shard_model(model: torch.nn.Module):
         reduce_dtype=torch.float16,
     )
 
-    # Shard each transformer decoder block independently
     for decoder_block in model.model.layers:
         fully_shard(
             decoder_block,
@@ -136,7 +144,6 @@ def shard_model(model: torch.nn.Module):
             mp_policy=mp_policy,
         )
 
-    # Shard the full model wrapper
     fully_shard(
         model,
         mesh=mesh,
@@ -144,6 +151,8 @@ def shard_model(model: torch.nn.Module):
         offload_policy=offload_policy,
         mp_policy=mp_policy,
     )
+
+    logger.info("FSDP2 sharding complete.")
 
 
 # ── Checkpointing ─────────────────────────────────────────────────────────────
@@ -205,11 +214,11 @@ def report_metrics_and_save_fsdp_checkpoint(
         dcp.save(state_dict=state_dict, checkpoint_id=temp_checkpoint_dir)
         checkpoint = ray.train.Checkpoint.from_directory(temp_checkpoint_dir)
         ray.train.report(metrics, checkpoint=checkpoint)
-    logger.info(f"Checkpoint saved successfully. Metrics: {metrics}")
+    logger.info(f"Checkpoint saved. Metrics: {metrics}")
 
 
 def save_model_for_inference(model: FSDPModule, world_rank: int) -> None:
-    logger.info("Preparing model for inference...")
+    logger.info("Preparing model for inference — all-gathering shards to rank 0...")
     with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
         save_file = os.path.join(temp_checkpoint_dir, "full-model.pt")
         model_state_dict = get_model_state_dict(
@@ -228,15 +237,26 @@ def save_model_for_inference(model: FSDPModule, world_rank: int) -> None:
 # ── Training Function ─────────────────────────────────────────────────────────
 
 def train_func(config):
-    """Main training function — LLaMA-3.1-8B-Instruct with FSDP2 on Ray Train."""
+    """Main training function — LLaMA-3.1-8B-Instruct with FSDP2 on Ray Train.
 
+    Progress logs go to the structured JSON log file at:
+        /tmp/ray/session_latest/logs/train/ray-train-app-worker-<id>.log
+
+    Pretty-print live on any node with:
+        LOG=$(ls -t /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log | head -1)
+        tail -f $LOG | python3 -c "
+          import sys, json
+          for line in sys.stdin:
+            try: d=json.loads(line); print(d['asctime'], f'[rank {d.get(chr(34)+'world_rank'+chr(34),chr(63))}]', d['message'])
+            except: print(line, end='')"
+    """
     model = init_model()
 
     device = ray.train.torch.get_device()
     torch.cuda.set_device(device)
-    # Do NOT call model.to(device) here — FSDP2 moves shards to GPU during fully_shard()
-    # Calling .to(device) before sharding would load the full 16GB fp16 model onto one
-    # GPU before it gets split, causing immediate OOM on a 24GB card.
+    # Do NOT call model.to(device) before sharding.
+    # FSDP2 moves each rank's shard to GPU inside fully_shard().
+    # Calling .to(device) first loads the full 16 GB onto one GPU → OOM.
 
     shard_model(model)
 
@@ -247,10 +267,9 @@ def train_func(config):
     if loaded_checkpoint:
         latest_epoch = load_fsdp_checkpoint(model, optimizer, loaded_checkpoint)
         start_epoch = latest_epoch + 1 if latest_epoch is not None else 0
-        logger.info(f"Resuming training from epoch {start_epoch}")
+        logger.info(f"Resuming from epoch {start_epoch}")
 
-    # Synthetic dataset — 1000 samples of 512 tokens each
-    # LLaMA-3.1 vocab size is 128256
+    # LLaMA-3.1 vocab size = 128256
     train_data = SyntheticTextDataset(
         vocab_size=128256,
         seq_len=config.get("seq_len", SEQ_LEN),
@@ -263,7 +282,18 @@ def train_func(config):
     )
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
 
-    world_rank = ray.train.get_context().get_world_rank()
+    world_rank    = ray.train.get_context().get_world_rank()
+    epochs        = config.get("epochs", 2)
+    total_batches = len(train_loader)
+
+    logger.info(
+        f"Training config — "
+        f"epochs: {epochs} | "
+        f"batches/epoch: {total_batches} | "
+        f"batch_size: {config.get('batch_size', 1)} | "
+        f"seq_len: {config.get('seq_len', SEQ_LEN)} | "
+        f"world_size: {ray.train.get_context().get_world_size()}"
+    )
 
     with torch.profiler.profile(
         activities=[
@@ -277,18 +307,17 @@ def train_func(config):
     ) as prof:
 
         running_loss = 0.0
-        num_batches = 0
-        epochs = config.get("epochs", 2)
+        num_batches  = 0
 
         for epoch in range(start_epoch, epochs):
             if ray.train.get_context().get_world_size() > 1:
                 train_loader.sampler.set_epoch(epoch)
 
             for batch_idx, input_ids in enumerate(train_loader):
-                # Causal LM: labels = input_ids (predict next token)
-                # The model computes cross-entropy loss internally
+                # Causal LM — model computes cross-entropy loss internally
+                # when labels == input_ids (next-token prediction objective)
                 outputs = model(input_ids=input_ids, labels=input_ids)
-                loss = outputs.loss
+                loss    = outputs.loss
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -297,27 +326,27 @@ def train_func(config):
                 prof.step()
 
                 running_loss += loss.item()
-                num_batches += 1
+                num_batches  += 1
 
-                # progress log every 10 batches, rank 0 only
-                # using print(flush=True) instead of logger — Ray workers
-                # buffer stdout so flush=True guarantees immediate visibility
+                # Progress log every 10 batches from every rank.
+                # Writes to structured JSON log: logs/train/ray-train-app-worker-*.log
                 if batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
-                    print(
-                        f"[Rank {world_rank}] Epoch {epoch+1}/{epochs} | "
-                        f"Batch {batch_idx+1}/{len(train_loader)} | "
+                    logger.info(
+                        f"[Rank {world_rank}] "
+                        f"Epoch {epoch+1}/{epochs} | "
+                        f"Batch {batch_idx+1}/{total_batches} | "
                         f"Loss: {loss.item():.4f} | "
-                        f"VRAM: {vram:.2f} GB",
-                        flush=True,
+                        f"VRAM: {vram:.2f} GB"
                     )
 
             avg_loss = running_loss / num_batches
-            metrics = {"loss": avg_loss, "perplexity": torch.exp(torch.tensor(avg_loss)).item()}
+            metrics  = {
+                "loss":       avg_loss,
+                "perplexity": torch.exp(torch.tensor(avg_loss)).item(),
+            }
             report_metrics_and_save_fsdp_checkpoint(model, optimizer, metrics, epoch)
-
-            if world_rank == 0:
-                print(f"Epoch {epoch+1}/{epochs} complete | {metrics}", flush=True)
+            logger.info(f"Epoch {epoch+1}/{epochs} complete | {metrics}")
 
     run_name = ray.train.get_context().get_experiment_name()
     prof.export_memory_timeline(
@@ -344,7 +373,7 @@ if __name__ == "__main__":
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    1,     # OPT-2.7B with seq_len=512: batch=1 per GPU to fit 24GB VRAM
+        "batch_size":    1,     # batch=1 per GPU — 8B model needs headroom for NCCL buffers
         "seq_len":       512,
     }
 
@@ -364,6 +393,13 @@ if __name__ == "__main__":
     )
 
     print("Starting LLaMA-3.1-8B-Instruct FSDP2 training job...")
+    print(f"Experiment: {experiment_name}")
+    print()
+    print("Watch training progress live (run in another terminal on any node):")
+    print("  LOG=$(ls -t /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log | head -1)")
+    print('  tail -f $LOG | python3 -c "import sys,json; [print(json.loads(l)[\'asctime\'], json.loads(l)[\'message\']) if \'{\" in l else None for l in sys.stdin]"')
+    print()
+
     result = trainer.fit()
     print("Training completed successfully!")
 
