@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 # Model: GPT-2 base — 124M parameters, ~1.5 GB training footprint
 # Easily fits on a single GPU — used here purely to demonstrate FSDP2 mechanics.
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 from torch.distributed.fsdp import (
     fully_shard,
@@ -98,7 +98,7 @@ def init_model() -> torch.nn.Module:
     Used here to demonstrate FSDP2 sharding mechanics on a fast, lightweight model.
     """
     logger.info(f"Initializing GPT-2 from {MODEL_PATH} ...")
-    model = AutoModelForCausalLM.from_pretrained(
+    model = GPT2LMHeadModel.from_pretrained(
         MODEL_PATH,
         dtype=torch.float16,      # fp16: 3 GB per node
         local_files_only=True,    # never hit the internet — use local copy
@@ -393,7 +393,7 @@ if __name__ == "__main__":
         f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    tokenizer = GPT2Tokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
     model = init_model()
     state_dict = torch.load(PATH_TO_FULL_MODEL, map_location="cpu")
     model.load_state_dict(state_dict)
