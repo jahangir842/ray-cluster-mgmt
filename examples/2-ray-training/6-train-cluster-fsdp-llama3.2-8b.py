@@ -89,7 +89,7 @@ def init_model() -> torch.nn.Module:
     logger.info(f"Initializing LLaMA-3.1-8B-Instruct from {MODEL_PATH} ...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_PATH,
-        torch_dtype=torch.float32,   # FSDP2 MixedPrecisionPolicy will cast to fp16
+        dtype=torch.float16,         # load in fp16 — halves RAM: 32GB → 16GB per node
         local_files_only=True,       # never try to download — use local copy
     )
     return model
@@ -227,7 +227,9 @@ def train_func(config):
 
     device = ray.train.torch.get_device()
     torch.cuda.set_device(device)
-    model.to(device)
+    # Do NOT call model.to(device) here — FSDP2 moves shards to GPU during fully_shard()
+    # Calling .to(device) before sharding would load the full 16GB fp16 model onto one
+    # GPU before it gets split, causing immediate OOM on a 24GB card.
 
     shard_model(model)
 
