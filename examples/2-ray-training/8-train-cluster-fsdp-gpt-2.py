@@ -60,7 +60,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/gpt2"
+MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/gpt2_weights"
 SEQ_LEN    = 1024   # GPT-2 native context length
 
 
