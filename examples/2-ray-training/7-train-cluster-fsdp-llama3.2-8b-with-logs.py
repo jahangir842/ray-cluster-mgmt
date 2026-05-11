@@ -300,10 +300,10 @@ def train_func(config):
                 # progress log every 10 batches, rank 0 only
                 # using print(flush=True) instead of logger — Ray workers
                 # buffer stdout so flush=True guarantees immediate visibility
-                if world_rank == 0 and batch_idx % 10 == 0:
+                if batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     print(
-                        f"Epoch {epoch+1}/{epochs} | "
+                        f"[Rank {world_rank}] Epoch {epoch+1}/{epochs} | "
                         f"Batch {batch_idx+1}/{len(train_loader)} | "
                         f"Loss: {loss.item():.4f} | "
                         f"VRAM: {vram:.2f} GB",
