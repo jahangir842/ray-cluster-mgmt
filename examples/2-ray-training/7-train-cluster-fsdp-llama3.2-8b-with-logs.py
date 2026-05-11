@@ -35,11 +35,13 @@ from torch.distributed.checkpoint.stateful import Stateful
 
 # Enable Ray Train V2 for the latest train APIs
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
+os.environ["RAY_DEDUP_LOGS"] = "0"
 
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
     "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+    "RAY_DEDUP_LOGS": "0",
 }
 os.environ.update(_NCCL_ENV)
 
