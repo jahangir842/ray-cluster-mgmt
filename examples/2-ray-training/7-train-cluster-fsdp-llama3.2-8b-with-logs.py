@@ -20,7 +20,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from torch.distributed.fsdp import (
     fully_shard,
     FSDPModule,
-    CPUOffloadPolicy,
     MixedPrecisionPolicy,
 )
 from torch.distributed.device_mesh import init_device_mesh
@@ -120,8 +119,12 @@ def shard_model(model: torch.nn.Module):
     Each block is sharded independently (reshard_after_forward=True),
     then the outer model wrapper is sharded.
 
-    With CPUOffloadPolicy, Adam optimizer states live in system RAM,
-    not GPU VRAM — critical for fitting an 8B model on 24 GB cards.
+    Note: CPUOffloadPolicy is intentionally NOT used here.
+    On multi-node clusters it causes a deadlock on the first all-gather
+    because FSDP2 must synchronize a CPU->GPU transfer across all 8 nodes
+    before the NCCL collective can start — this coordination hangs on 1GbE.
+    With 8-way sharding each GPU holds only ~2 GB of parameters, leaving
+    ~22 GB headroom for optimizer states and activations on 24 GB cards.
     """
     logger.info("Applying FSDP2 sharding to model...")
 
@@ -131,8 +134,6 @@ def shard_model(model: torch.nn.Module):
         mesh_shape=(world_size,),
         mesh_dim_names=("data_parallel",),
     )
-
-    offload_policy = CPUOffloadPolicy()
 
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.float16,
@@ -144,7 +145,6 @@ def shard_model(model: torch.nn.Module):
             decoder_block,
             mesh=mesh,
             reshard_after_forward=True,
-            offload_policy=offload_policy,
             mp_policy=mp_policy,
         )
 
@@ -152,7 +152,6 @@ def shard_model(model: torch.nn.Module):
         model,
         mesh=mesh,
         reshard_after_forward=True,
-        offload_policy=offload_policy,
         mp_policy=mp_policy,
     )
 
