@@ -270,7 +270,7 @@ def train_func(config):
     train_data = FashionMNIST(root=data_dir, train=True, download=True, transform=transform)
     train_loader = DataLoader(
         train_data,
-        batch_size=config.get("batch_size", 4),
+        batch_size=config.get("batch_size", 2),
         shuffle=True,
     )
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
