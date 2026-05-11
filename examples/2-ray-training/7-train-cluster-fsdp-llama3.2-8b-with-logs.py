@@ -45,6 +45,7 @@ os.environ.update(_NCCL_ENV)
 
 # Set up logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
 SEQ_LEN    = 512   # token sequence length per sample
@@ -295,11 +296,12 @@ def train_func(config):
                 # progress log every 10 batches, rank 0 only
                 if world_rank == 0 and batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
-                    logger.info(
+                    print(
                         f"Epoch {epoch+1}/{epochs} | "
                         f"Batch {batch_idx+1}/{len(train_loader)} | "
                         f"Loss: {loss.item():.4f} | "
-                        f"VRAM: {vram:.2f} GB"
+                        f"VRAM: {vram:.2f} GB",
+                        flush=True,
                     )
 
             avg_loss = running_loss / num_batches
