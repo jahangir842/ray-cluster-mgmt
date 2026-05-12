@@ -295,6 +295,10 @@ def train_func(config):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                # ── add this block after first batch only ──
+                if batch_idx == 0 and world_rank == 0:
+                    print(torch.cuda.memory_summary(device=device), flush=True)
+                # ────────────────────────────────────────────
 
                 prof.step()
 
