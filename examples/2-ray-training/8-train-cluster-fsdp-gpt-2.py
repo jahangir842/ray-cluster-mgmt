@@ -128,7 +128,7 @@ def shard_model(model: torch.nn.Module):
 
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.float16,
-        reduce_dtype=torch.float16,
+        reduce_dtype=torch.float32,
     )
 
     # GPT-2 transformer blocks are at model.transformer.h
