@@ -24,7 +24,7 @@ from torch.distributed.fsdp import (
     MixedPrecisionPolicy,
 )
 from torch.distributed.device_mesh import init_device_mesh
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -59,8 +59,8 @@ SEQ_LEN    = 1024   # GPT-2 native context length
 
 class WikiTextDataset(Dataset):
     def __init__(self, tokenizer, seq_len: int, split: str = "train"):
-        dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
-        
+        dataset = load_from_disk("/mnt/cluster_storage/datasets/wikitext2")[split]
+
         # concatenate all text into one long string then tokenize
         text = " ".join([x for x in dataset["text"] if x.strip()])
         tokens = tokenizer.encode(text)
