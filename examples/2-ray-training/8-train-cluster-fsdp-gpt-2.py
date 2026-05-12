@@ -44,15 +44,6 @@ _NCCL_ENV = {
 }
 os.environ.update(_NCCL_ENV)
 
-# Set up logging — Ray Train workers write structured JSON logs to:
-# /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log
-# Watch live with:
-#   LOG=$(ls -t /tmp/ray/session_latest/logs/train/ray-train-app-worker-*.log | head -1)
-#   tail -f $LOG | python3 -c "
-#     import sys, json
-#     for line in sys.stdin:
-#       try: d=json.loads(line); print(d['asctime'], f\"[rank {d.get('world_rank','?')}]\", d['message'])
-#       except: print(line, end='')"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -63,18 +54,26 @@ logger = logging.getLogger(__name__)
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/gpt2_weights"
 SEQ_LEN    = 1024   # GPT-2 native context length
 
-
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
-class SyntheticTextDataset(Dataset):
-    """Synthetic token dataset — no download needed.
+class TextDataset(Dataset):
+    def __init__(self, tokenizer, seq_len: int, num_samples: int = 1000):
+        # real text — the model can actually learn from this
+        text = """
+        The quick brown fox jumps over the lazy dog.
+        Artificial intelligence is transforming the world.
+        Distributed training enables training large models across multiple GPUs.
+        The future of machine learning is bright and full of possibilities.
+        Neural networks learn by adjusting weights through backpropagation.
+        """ * 500   # repeat to get enough tokens
 
-    Generates random token IDs in GPT-2's vocabulary range (50257).
-    Demonstrates FSDP2 sharding and distributed training infrastructure.
-    Replace with a real dataset (WikiText, OpenWebText, etc.) for actual training.
-    """
-    def __init__(self, vocab_size: int, seq_len: int, num_samples: int = 1000):
-        self.data = torch.randint(0, vocab_size, (num_samples, seq_len))
+        tokens = tokenizer.encode(text)
+        self.data = []
+        for i in range(0, len(tokens) - seq_len, seq_len // 2):
+            chunk = tokens[i:i + seq_len]
+            if len(chunk) == seq_len:
+                self.data.append(torch.tensor(chunk))
+        self.data = self.data[:num_samples]
 
     def __len__(self):
         return len(self.data)
@@ -253,10 +252,9 @@ def train_func(config):
         logger.info(f"Resuming from epoch {start_epoch}")
 
     # GPT-2 vocab size = 50257
-    train_data = SyntheticTextDataset(
-        vocab_size=50257,
+    train_data = TextDataset(
+        tokenizer=tokenizer,
         seq_len=config.get("seq_len", SEQ_LEN),
-        num_samples=1000,
     )
     train_loader = DataLoader(
         train_data,
