@@ -101,7 +101,7 @@ def init_model() -> torch.nn.Module:
     model = GPT2LMHeadModel.from_pretrained(
         Path(MODEL_PATH),
         local_files_only=True,
-    ).to(torch.float16)
+    )
     return model
 
 
@@ -127,7 +127,7 @@ def shard_model(model: torch.nn.Module):
     )
 
     mp_policy = MixedPrecisionPolicy(
-        param_dtype=torch.float16,
+        param_dtype=torch.float32,
         reduce_dtype=torch.float32,
     )
 
