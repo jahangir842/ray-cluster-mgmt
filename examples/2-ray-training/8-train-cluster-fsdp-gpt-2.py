@@ -252,6 +252,7 @@ def train_func(config):
         logger.info(f"Resuming from epoch {start_epoch}")
 
     # GPT-2 vocab size = 50257
+    tokenizer = GPT2Tokenizer.from_pretrained(Path(MODEL_PATH), local_files_only=True)
     train_data = TextDataset(
         tokenizer=tokenizer,
         seq_len=config.get("seq_len", SEQ_LEN),
