@@ -3,6 +3,7 @@ import tempfile
 import uuid
 import logging
 from pathlib import Path
+from emoji import config
 import torch
 import torch.profiler
 import torch.distributed.checkpoint as dcp
@@ -23,7 +24,7 @@ from torch.distributed.fsdp import (
     MixedPrecisionPolicy,
 )
 from torch.distributed.device_mesh import init_device_mesh
-
+from datasets import load_dataset
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -56,24 +57,17 @@ SEQ_LEN    = 1024   # GPT-2 native context length
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
-class TextDataset(Dataset):
-    def __init__(self, tokenizer, seq_len: int, num_samples: int = 1000):
-        # real text — the model can actually learn from this
-        text = """
-        The quick brown fox jumps over the lazy dog.
-        Artificial intelligence is transforming the world.
-        Distributed training enables training large models across multiple GPUs.
-        The future of machine learning is bright and full of possibilities.
-        Neural networks learn by adjusting weights through backpropagation.
-        """ * 500   # repeat to get enough tokens
-
+class WikiTextDataset(Dataset):
+    def __init__(self, tokenizer, seq_len: int, split: str = "train"):
+        dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
+        
+        # concatenate all text into one long string then tokenize
+        text = " ".join([x for x in dataset["text"] if x.strip()])
         tokens = tokenizer.encode(text)
+        
         self.data = []
-        for i in range(0, len(tokens) - seq_len, seq_len // 2):
-            chunk = tokens[i:i + seq_len]
-            if len(chunk) == seq_len:
-                self.data.append(torch.tensor(chunk))
-        self.data = self.data[:num_samples]
+        for i in range(0, len(tokens) - seq_len, seq_len):
+            self.data.append(torch.tensor(tokens[i:i + seq_len]))
 
     def __len__(self):
         return len(self.data)
@@ -253,10 +247,7 @@ def train_func(config):
 
     # GPT-2 vocab size = 50257
     tokenizer = GPT2Tokenizer.from_pretrained(Path(MODEL_PATH), local_files_only=True)
-    train_data = TextDataset(
-        tokenizer=tokenizer,
-        seq_len=config.get("seq_len", SEQ_LEN),
-    )
+    train_data = WikiTextDataset(tokenizer, seq_len=config.get("seq_len", SEQ_LEN))
     train_loader = DataLoader(
         train_data,
         batch_size=config.get("batch_size", 1),
