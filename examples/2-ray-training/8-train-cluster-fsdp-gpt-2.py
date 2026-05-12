@@ -35,7 +35,7 @@ from torch.distributed.checkpoint.stateful import Stateful
 
 # Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
-os.environ["RAY_DEDUP_LOGS"] = "0"      # show all logs without deduplication
+# os.environ["RAY_DEDUP_LOGS"] = "0"      # show all logs without deduplication
 
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    4,     # GPT-2 XL is small — batch=4 fits easily on 24GB
+        "batch_size":    4,     
         "seq_len":       1024,  # GPT-2 native context length
     }
 
