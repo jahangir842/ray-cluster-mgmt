@@ -60,14 +60,21 @@ class TinyStoriesDataset(Dataset):
     def __init__(self, tokenizer, seq_len: int, split: str = "train"):
         dataset = load_from_disk("/mnt/cluster_storage/datasets/tinystories")[split]
 
-        # TinyStories has 2M+ stories — use only first 50k for training
-        dataset = dataset.select(range(50000))
+        logger.info(f"Tokenizing {len(dataset)} stories...")
+        tokens = []
+        for i, story in enumerate(dataset["text"]):
+            if story and story.strip():
+                tokens.extend(tokenizer.encode(story))
+            if i % 100000 == 0:
+                logger.info(f"  tokenized {i}/{len(dataset)} stories, {len(tokens):,} tokens so far")
 
-        text = " ".join([x for x in dataset["text"] if x and x.strip()])
-        tokens = tokenizer.encode(text)
+        logger.info(f"Total tokens: {len(tokens):,}")
+
         self.data = []
         for i in range(0, len(tokens) - seq_len, seq_len):
             self.data.append(torch.tensor(tokens[i:i + seq_len]))
+
+        logger.info(f"Total sequences: {len(self.data):,}")
 
     def __len__(self):
         return len(self.data)
