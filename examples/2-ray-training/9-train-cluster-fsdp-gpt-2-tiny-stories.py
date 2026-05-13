@@ -254,7 +254,7 @@ def train_func(config):
 
     # GPT-2 vocab size = 50257
     tokenizer = GPT2Tokenizer.from_pretrained(
-    str(Path(MODEL_PATH)),
+    Path("/mnt/cluster_storage/datasets/gpt2_tokenizer"),
     local_files_only=True,
     )
     train_data = TinyStoriesDataset(tokenizer, seq_len=config.get("seq_len", SEQ_LEN))
@@ -396,7 +396,10 @@ if __name__ == "__main__":
         f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
     )
 
-    tokenizer = GPT2Tokenizer.from_pretrained(Path(MODEL_PATH), local_files_only=True)
+    tokenizer = GPT2Tokenizer.from_pretrained(
+    Path("/mnt/cluster_storage/datasets/gpt2_tokenizer"),
+    local_files_only=True,
+    )
     model = init_model()
     state_dict = torch.load(PATH_TO_FULL_MODEL, map_location="cpu")
     model.load_state_dict(state_dict)
