@@ -34,7 +34,7 @@ from torch.distributed.checkpoint.stateful import Stateful
 
 # Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
-# os.environ["RAY_DEDUP_LOGS"] = "0"      # show all logs without deduplication
+os.environ["RAY_DEDUP_LOGS"] = "1"     
 
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
@@ -60,10 +60,11 @@ class TinyStoriesDataset(Dataset):
     def __init__(self, tokenizer, seq_len: int, split: str = "train"):
         dataset = load_from_disk("/mnt/cluster_storage/datasets/tinystories")[split]
 
-        # TinyStories has a 'text' column with one story per row
+        # TinyStories has 2M+ stories — use only first 50k for training
+        dataset = dataset.select(range(50000))
+
         text = " ".join([x for x in dataset["text"] if x and x.strip()])
         tokens = tokenizer.encode(text)
-
         self.data = []
         for i in range(0, len(tokens) - seq_len, seq_len):
             self.data.append(torch.tensor(tokens[i:i + seq_len]))
@@ -73,8 +74,6 @@ class TinyStoriesDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx]
-
-
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def init_model() -> torch.nn.Module:
