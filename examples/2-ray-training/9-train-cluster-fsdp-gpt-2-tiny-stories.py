@@ -336,14 +336,14 @@ if __name__ == "__main__":
     )
 
     scaling_config = ray.train.ScalingConfig(
-        num_workers=8,
+        num_workers=7,
         use_gpu=True,
     )
 
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    4,      # safe for 24 GB GPU with seq_len=1024
+        "batch_size":    128,      # safe for 24 GB GPU with seq_len=1024
         "seq_len":       1024,
     }
 
