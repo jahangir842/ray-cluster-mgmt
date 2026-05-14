@@ -98,6 +98,7 @@ def init_model() -> torch.nn.Module:
         n_embd=768,         # embedding dimension
         n_layer=12,         # number of transformer layers
         n_head=12,          # number of attention heads
+        loss_type="ForCausalLMLoss",
     )
     model = GPT2LMHeadModel(config)
     total_params = sum(p.numel() for p in model.parameters())
