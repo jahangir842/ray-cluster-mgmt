@@ -310,6 +310,25 @@ def train_func(config):
                         f"VRAM: {vram:.2f} GB"
                     )
 
+                # ── checkpoint every 500 batches ──────────────────────────────────────
+                if batch_idx > 0 and batch_idx % 500 == 0:
+                    mid_loss = running_loss / num_batches
+                    logger.info(
+                        f"[Rank {world_rank}] Mid-epoch checkpoint at batch {batch_idx} "
+                        f"| Loss: {mid_loss:.4f}"
+                    )
+                    report_metrics_and_save_fsdp_checkpoint(
+                        model, optimizer,
+                        metrics={
+                            "loss":       mid_loss,
+                            "perplexity": torch.exp(torch.tensor(mid_loss)).item(),
+                            "epoch":      epoch,
+                            "batch":      batch_idx,
+                        },
+                        epoch=epoch,
+                    )
+                # ─────────────────────────────────────────────────────────────────────
+
             avg_loss = running_loss / num_batches
             metrics  = {
                 "loss":       avg_loss,
