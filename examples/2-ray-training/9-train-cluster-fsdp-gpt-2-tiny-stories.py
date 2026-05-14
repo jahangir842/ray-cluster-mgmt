@@ -366,7 +366,7 @@ if __name__ == "__main__":
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    4,     
+        "batch_size":    256,     
         "seq_len":       1024,  # GPT-2 native context length
     }
 
