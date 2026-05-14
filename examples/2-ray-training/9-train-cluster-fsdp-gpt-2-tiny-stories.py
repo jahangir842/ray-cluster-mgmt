@@ -12,9 +12,6 @@ import ray.train.torch
 
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
-
-# Model: GPT-2 base — 124M parameters, ~1.5 GB training footprint
-# Easily fits on a single GPU — used here purely to demonstrate FSDP2 mechanics.
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 from torch.distributed.fsdp import (
@@ -23,7 +20,7 @@ from torch.distributed.fsdp import (
     MixedPrecisionPolicy,
 )
 from torch.distributed.device_mesh import init_device_mesh
-from datasets import load_dataset, load_from_disk
+
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -33,14 +30,14 @@ from torch.distributed.checkpoint.state_dict import (
 from torch.distributed.checkpoint.stateful import Stateful
 
 # Enable Ray Train V2
-os.environ["RAY_TRAIN_V2_ENABLED"] = "1" 
-os.environ["RAY_DEDUP_LOGS"] = "0"   
+os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
+os.environ["RAY_DEDUP_LOGS"] = "0"      # driver-level: show all logs
 
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
     "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-    "RAY_DEDUP_LOGS": "0",
+    "RAY_DEDUP_LOGS": "0",               # worker-level: show all logs
 }
 os.environ.update(_NCCL_ENV)
 
@@ -51,44 +48,41 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/gpt2_weights"
-SEQ_LEN    = 1024   # GPT-2 native context length
+SEQ_LEN = 1024   # GPT-2 native context length
+
+TOKENIZER_PATH = "/mnt/cluster_storage/datasets/gpt2_tokenizer"
+TOKENIZED_PATH = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
+
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class TinyStoriesDataset(Dataset):
-    def __init__(self, tokenizer, seq_len: int, split: str = "train"):
-        dataset = load_from_disk("/mnt/cluster_storage/datasets/tinystories")[split]
+    """Loads pre-tokenized TinyStories from shared storage.
 
-        logger.info(f"Tokenizing {len(dataset)} stories...")
-        tokens = []
-        for i, story in enumerate(dataset["text"]):
-            if story and story.strip():
-                tokens.extend(tokenizer.encode(story))
-            if i % 100000 == 0:
-                logger.info(f"  tokenized {i}/{len(dataset)} stories, {len(tokens):,} tokens so far")
+    Pre-tokenization is done once via the standalone script — workers
+    load in seconds instead of spending 20 minutes tokenizing each run.
 
-        logger.info(f"Total tokens: {len(tokens):,}")
-
-        self.data = []
-        for i in range(0, len(tokens) - seq_len, seq_len):
-            self.data.append(torch.tensor(tokens[i:i + seq_len]))
-
-        logger.info(f"Total sequences: {len(self.data):,}")
+    Shape: [460813, 1024] — 460k sequences of 1024 tokens each.
+    """
+    def __init__(self, seq_len: int):
+        logger.info(f"Loading pre-tokenized dataset from {TOKENIZED_PATH} ...")
+        self.data = torch.load(TOKENIZED_PATH)
+        logger.info(f"Loaded {len(self.data):,} sequences of length {seq_len}")
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         return self.data[idx]
+
+
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def init_model() -> torch.nn.Module:
     """Initialize a blank GPT-2 from config — no pretrained weights.
 
-    This is a randomly initialized model trained from scratch.
-    Architecture is identical to GPT-2 base (124M params) but weights
-    are random — the model must learn everything from TinyStories data.
+    Randomly initialized model trained from scratch on TinyStories.
+    Architecture identical to GPT-2 base (124M params).
 
     Memory stats:
         Parameters:      124,439,808
@@ -114,14 +108,11 @@ def init_model() -> torch.nn.Module:
 # ── FSDP2 Sharding ────────────────────────────────────────────────────────────
 
 def shard_model(model: torch.nn.Module):
-    """Apply FSDP2 sharding to GPT-2 XL across all ranks.
+    """Apply FSDP2 sharding across all ranks.
 
-    GPT-2 transformer blocks live at model.transformer.h (48 layers).
+    GPT-2 transformer blocks live at model.transformer.h (12 layers).
     Each block is sharded independently (reshard_after_forward=True),
     then the outer model wrapper is sharded.
-
-    No CPUOffloadPolicy needed — GPT-2 XL is small enough that optimizer
-    states fit on GPU with 8-way sharding (~3 GB/GPU total).
     """
     logger.info("Applying FSDP2 sharding to model...")
 
@@ -137,7 +128,6 @@ def shard_model(model: torch.nn.Module):
         reduce_dtype=torch.float32,
     )
 
-    # GPT-2 transformer blocks are at model.transformer.h
     for decoder_block in model.transformer.h:
         fully_shard(
             decoder_block,
@@ -162,9 +152,9 @@ class AppState(Stateful):
     """Stateful wrapper for checkpointing model and optimizer state with DCP."""
 
     def __init__(self, model, optimizer=None, epoch=None):
-        self.model = model
+        self.model     = model
         self.optimizer = optimizer
-        self.epoch = epoch
+        self.epoch     = epoch
 
     def state_dict(self):
         model_state_dict, optimizer_state_dict = get_state_dict(self.model, self.optimizer)
@@ -193,7 +183,7 @@ def load_fsdp_checkpoint(
     logger.info("Loading distributed checkpoint for resuming training...")
     try:
         with ckpt.as_directory() as checkpoint_dir:
-            app_state = AppState(model, optimizer)
+            app_state  = AppState(model, optimizer)
             state_dict = {"app": app_state}
             dcp.load(state_dict=state_dict, checkpoint_id=checkpoint_dir)
         logger.info(f"Successfully loaded checkpoint from epoch {app_state.epoch}")
@@ -221,7 +211,7 @@ def report_metrics_and_save_fsdp_checkpoint(
 def save_model_for_inference(model: FSDPModule, world_rank: int) -> None:
     logger.info("Preparing model for inference — all-gathering shards to rank 0...")
     with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
-        save_file = os.path.join(temp_checkpoint_dir, "full-model.pt")
+        save_file        = os.path.join(temp_checkpoint_dir, "full-model.pt")
         model_state_dict = get_model_state_dict(
             model=model,
             options=StateDictOptions(full_state_dict=True, cpu_offload=True),
@@ -238,14 +228,13 @@ def save_model_for_inference(model: FSDPModule, world_rank: int) -> None:
 # ── Training Function ─────────────────────────────────────────────────────────
 
 def train_func(config):
-    """Main training function — GPT-2 XL with FSDP2 on Ray Train."""
+    """Main training function — blank GPT-2 on TinyStories with FSDP2."""
     model = init_model()
 
     device = ray.train.torch.get_device()
     torch.cuda.set_device(device)
     # Do NOT call model.to(device) before sharding.
     # FSDP2 moves each rank's shard to GPU inside fully_shard().
-    # Calling .to(device) first loads the full 16 GB onto one GPU → OOM.
 
     shard_model(model)
 
@@ -255,18 +244,14 @@ def train_func(config):
     loaded_checkpoint = ray.train.get_checkpoint()
     if loaded_checkpoint:
         latest_epoch = load_fsdp_checkpoint(model, optimizer, loaded_checkpoint)
-        start_epoch = latest_epoch + 1 if latest_epoch is not None else 0
+        start_epoch  = latest_epoch + 1 if latest_epoch is not None else 0
         logger.info(f"Resuming from epoch {start_epoch}")
 
-    # GPT-2 vocab size = 50257
-    tokenizer = GPT2Tokenizer.from_pretrained(
-    Path("/mnt/cluster_storage/datasets/gpt2_tokenizer"),
-    local_files_only=True,
-    )
-    train_data = TinyStoriesDataset(tokenizer, seq_len=config.get("seq_len", SEQ_LEN))
+    # Load pre-tokenized dataset — no tokenization overhead on workers
+    train_data   = TinyStoriesDataset(seq_len=config.get("seq_len", SEQ_LEN))
     train_loader = DataLoader(
         train_data,
-        batch_size=config.get("batch_size", 1),
+        batch_size=config.get("batch_size", 4),
         shuffle=True,
     )
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
@@ -279,7 +264,7 @@ def train_func(config):
         f"Training config — "
         f"epochs: {epochs} | "
         f"batches/epoch: {total_batches} | "
-        f"batch_size: {config.get('batch_size', 1)} | "
+        f"batch_size: {config.get('batch_size', 4)} | "
         f"seq_len: {config.get('seq_len', SEQ_LEN)} | "
         f"world_size: {ray.train.get_context().get_world_size()}"
     )
@@ -303,26 +288,18 @@ def train_func(config):
                 train_loader.sampler.set_epoch(epoch)
 
             for batch_idx, input_ids in enumerate(train_loader):
-                # Causal LM — model computes cross-entropy loss internally
-                # when labels == input_ids (next-token prediction objective)
                 outputs = model(input_ids=input_ids, labels=input_ids)
                 loss    = outputs.loss
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                # ── add this block after first batch only ──
-                if batch_idx == 0 and world_rank == 0:
-                    print(torch.cuda.memory_summary(device=device), flush=True)
-                # ────────────────────────────────────────────
 
                 prof.step()
 
                 running_loss += loss.item()
                 num_batches  += 1
 
-                # Progress log every 10 batches from every rank.
-                # Writes to structured JSON log: logs/train/ray-train-app-worker-*.log
                 if batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     logger.info(
@@ -359,18 +336,23 @@ if __name__ == "__main__":
     )
 
     scaling_config = ray.train.ScalingConfig(
-        num_workers=7,
+        num_workers=8,
         use_gpu=True,
     )
 
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    256,     
-        "seq_len":       1024,  # GPT-2 native context length
+        "batch_size":    4,      # safe for 24 GB GPU with seq_len=1024
+        "seq_len":       1024,
     }
 
     experiment_name = f"gpt2_scratch_tinystories_{uuid.uuid4().hex[:8]}"
+
+    # ── Resume from checkpoint (set to None for fresh start) ──────────────
+    RESUME_FROM_CHECKPOINT = None
+    # To resume, set to the checkpoint path, e.g.:
+    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_ee47e408/checkpoint_2026-05-13_13-15-41.123456"
 
     run_config = ray.train.RunConfig(
         storage_path="/mnt/cluster_storage/",
@@ -383,6 +365,10 @@ if __name__ == "__main__":
         scaling_config=scaling_config,
         train_loop_config=train_loop_config,
         run_config=run_config,
+        resume_from_checkpoint=(
+            ray.train.Checkpoint.from_directory(RESUME_FROM_CHECKPOINT)
+            if RESUME_FROM_CHECKPOINT else None
+        ),
     )
 
     print("Starting GPT-2 from-scratch training on TinyStories...")
@@ -396,23 +382,23 @@ if __name__ == "__main__":
     result = trainer.fit()
     print("Training completed successfully!")
 
-    # ── Inference ─────────────────────────────────────────────────────────────
+    # ── Inference ─────────────────────────────────────────────────────────
 
     PATH_TO_FULL_MODEL = (
         f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
     )
 
     tokenizer = GPT2Tokenizer.from_pretrained(
-    Path("/mnt/cluster_storage/datasets/gpt2_tokenizer"),
-    local_files_only=True,
+        Path(TOKENIZER_PATH),
+        local_files_only=True,
     )
     model = init_model()
     state_dict = torch.load(PATH_TO_FULL_MODEL, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()
 
-    prompt = "The future of distributed AI training is"
+    prompt = "Once upon a time there was a little girl"
     inputs = tokenizer(prompt, return_tensors="pt")
     with torch.no_grad():
-        output = model.generate(**inputs, max_new_tokens=50)
+        output = model.generate(**inputs, max_new_tokens=100)
     print(tokenizer.decode(output[0], skip_special_tokens=True))
