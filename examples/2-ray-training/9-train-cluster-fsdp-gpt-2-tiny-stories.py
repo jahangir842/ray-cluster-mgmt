@@ -343,7 +343,7 @@ if __name__ == "__main__":
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
-        "batch_size":    128,      # safe for 24 GB GPU with seq_len=1024
+        "batch_size":    64,      # safe for 24 GB GPU with seq_len=1024
         "seq_len":       1024,
     }
 
