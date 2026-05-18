@@ -57,7 +57,7 @@ TOKENIZED_PATH  = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
 # ── MLflow config ─────────────────────────────────────────────────────────────
 # Set MLFLOW_TRACKING_URI to your head node's IP before running.
 # You can also export it in your shell:  export MLFLOW_TRACKING_URI=http://<HEAD_IP>:5000
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
 MLFLOW_EXPERIMENT   = "gpt2-tinystories"
 
 

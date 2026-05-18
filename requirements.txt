@@ -7,5 +7,5 @@ huggingface_hub
 tensorboard
 sentencepiece
 protobuf
-
+mlflow
 matplotlib
