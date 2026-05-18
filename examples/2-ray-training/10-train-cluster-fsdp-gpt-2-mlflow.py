@@ -10,6 +10,7 @@ import ray
 import ray.train
 import ray.train.torch
 import mlflow
+import mlflow.tracking
 
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
@@ -35,21 +36,16 @@ os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 os.environ["RAY_DEDUP_LOGS"] = "0"
 
 # ── MLflow config ─────────────────────────────────────────────────────────────
-# Head node IP — MLflow server runs here. Workers reach it via this address.
-# Change this if your head node IP is different.
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
-MLFLOW_EXPERIMENT   = "gpt2-tinystories-1"
+MLFLOW_EXPERIMENT   = "gpt2-tinystories-2"
 
-# MLFLOW_TRACKING_URI is included in _NCCL_ENV so Ray's runtime_env broadcasts
-# it to every worker process on every node — this is what makes workers connect
-# to the correct MLflow server instead of localhost.
 _NCCL_ENV = {
-    "NCCL_SOCKET_IFNAME":    "enp0s31f6,eno1",
-    "GLOO_SOCKET_IFNAME":    "enp0s31f6,eno1",
+    "NCCL_SOCKET_IFNAME":      "enp0s31f6,eno1",
+    "GLOO_SOCKET_IFNAME":      "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-    "RAY_DEDUP_LOGS":        "0",
-    "MLFLOW_TRACKING_URI":   MLFLOW_TRACKING_URI,   # ← broadcast to all workers
-    "TRANSFORMERS_CACHE":    "/mnt/cluster_storage/.cache/huggingface",  # ← fix cache warning
+    "RAY_DEDUP_LOGS":          "0",
+    "MLFLOW_TRACKING_URI":     MLFLOW_TRACKING_URI,
+    "HF_HOME":                 "/mnt/cluster_storage/.cache/huggingface",
 }
 os.environ.update(_NCCL_ENV)
 
@@ -60,16 +56,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SEQ_LEN = 1024
-
-TOKENIZER_PATH  = "/mnt/cluster_storage/datasets/gpt2_tokenizer"
-TOKENIZED_PATH  = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
+SEQ_LEN        = 1024
+TOKENIZER_PATH = "/mnt/cluster_storage/datasets/gpt2_tokenizer"
+TOKENIZED_PATH = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class TinyStoriesDataset(Dataset):
-    """Loads pre-tokenized TinyStories from shared storage."""
     def __init__(self, seq_len: int):
         logger.info(f"Loading pre-tokenized dataset from {TOKENIZED_PATH} ...")
         self.data = torch.load(TOKENIZED_PATH)
@@ -85,7 +79,6 @@ class TinyStoriesDataset(Dataset):
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def init_model() -> torch.nn.Module:
-    """Initialize a blank GPT-2 from config — no pretrained weights."""
     from transformers import GPT2Config
     logger.info("Initializing blank GPT-2 from config (no pretrained weights)...")
     config = GPT2Config(
@@ -105,44 +98,26 @@ def init_model() -> torch.nn.Module:
 # ── FSDP2 Sharding ────────────────────────────────────────────────────────────
 
 def shard_model(model: torch.nn.Module):
-    """Apply FSDP2 sharding across all ranks."""
     logger.info("Applying FSDP2 sharding to model...")
-
     world_size = ray.train.get_context().get_world_size()
     mesh = init_device_mesh(
         device_type="cuda",
         mesh_shape=(world_size,),
         mesh_dim_names=("data_parallel",),
     )
-
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.float32,
         reduce_dtype=torch.float32,
     )
-
     for decoder_block in model.transformer.h:
-        fully_shard(
-            decoder_block,
-            mesh=mesh,
-            reshard_after_forward=True,
-            mp_policy=mp_policy,
-        )
-
-    fully_shard(
-        model,
-        mesh=mesh,
-        reshard_after_forward=True,
-        mp_policy=mp_policy,
-    )
-
+        fully_shard(decoder_block, mesh=mesh, reshard_after_forward=True, mp_policy=mp_policy)
+    fully_shard(model, mesh=mesh, reshard_after_forward=True, mp_policy=mp_policy)
     logger.info("FSDP2 sharding complete.")
 
 
 # ── Checkpointing ─────────────────────────────────────────────────────────────
 
 class AppState(Stateful):
-    """Stateful wrapper for checkpointing model and optimizer state with DCP."""
-
     def __init__(self, model, optimizer=None, epoch=None):
         self.model     = model
         self.optimizer = optimizer
@@ -150,16 +125,11 @@ class AppState(Stateful):
 
     def state_dict(self):
         model_state_dict, optimizer_state_dict = get_state_dict(self.model, self.optimizer)
-        return {
-            "model": model_state_dict,
-            "optim": optimizer_state_dict,
-            "epoch": self.epoch,
-        }
+        return {"model": model_state_dict, "optim": optimizer_state_dict, "epoch": self.epoch}
 
     def load_state_dict(self, state_dict):
         set_state_dict(
-            self.model,
-            self.optimizer,
+            self.model, self.optimizer,
             model_state_dict=state_dict["model"],
             optim_state_dict=state_dict["optim"],
         )
@@ -167,62 +137,59 @@ class AppState(Stateful):
             self.epoch = state_dict["epoch"]
 
 
-def load_fsdp_checkpoint(
-    model: FSDPModule,
-    optimizer: torch.optim.Optimizer,
-    ckpt: ray.train.Checkpoint,
-) -> int | None:
+def load_fsdp_checkpoint(model, optimizer, ckpt):
     logger.info("Loading distributed checkpoint for resuming training...")
     try:
         with ckpt.as_directory() as checkpoint_dir:
-            app_state  = AppState(model, optimizer)
-            state_dict = {"app": app_state}
-            dcp.load(state_dict=state_dict, checkpoint_id=checkpoint_dir)
-        logger.info(f"Successfully loaded checkpoint from epoch {app_state.epoch}")
+            app_state = AppState(model, optimizer)
+            dcp.load(state_dict={"app": app_state}, checkpoint_id=checkpoint_dir)
+        logger.info(f"Loaded checkpoint from epoch {app_state.epoch}")
         return app_state.epoch
     except Exception as e:
-        logger.error(f"Failed to load checkpoint: {e}")
         raise RuntimeError(f"Checkpoint loading failed: {e}") from e
 
 
 def report_metrics_and_save_fsdp_checkpoint(
-    model: FSDPModule,
-    optimizer: torch.optim.Optimizer,
-    metrics: dict,
-    epoch: int = 0,
-    batch: int = 0,
-    is_rank0: bool = False,
-    mlflow_run_id: str | None = None,
-) -> None:
-    """Save a DCP checkpoint via Ray Train and log metrics to MLflow (rank 0 only)."""
+    model, optimizer, metrics,
+    epoch=0, batch=0,
+    is_rank0=False,
+    mlflow_run_id=None,
+    mlflow_client=None,
+):
+    """Save DCP checkpoint and log metrics to MLflow.
+
+    IMPORTANT: Uses MlflowClient.log_metrics() directly — never
+    `with mlflow.start_run()`. Context managers terminate the run
+    when the with-block exits, marking it "Finished" mid-training.
+    """
     logger.info("Saving checkpoint and reporting metrics...")
 
     with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
-        state_dict = {"app": AppState(model, optimizer, epoch)}
-        dcp.save(state_dict=state_dict, checkpoint_id=temp_checkpoint_dir)
-        checkpoint = ray.train.Checkpoint.from_directory(temp_checkpoint_dir)
-        ray.train.report(metrics, checkpoint=checkpoint)
+        dcp.save(
+            state_dict={"app": AppState(model, optimizer, epoch)},
+            checkpoint_id=temp_checkpoint_dir,
+        )
+        ray.train.report(
+            metrics,
+            checkpoint=ray.train.Checkpoint.from_directory(temp_checkpoint_dir),
+        )
 
-    # ── MLflow: log metrics on rank 0 only ───────────────────────────────────
-    if is_rank0 and mlflow_run_id:
-        # global_step makes the x-axis in MLflow meaningful across epochs
+    if is_rank0 and mlflow_run_id and mlflow_client:
         global_step = epoch * 10_000 + batch
-        with mlflow.start_run(run_id=mlflow_run_id):
-            mlflow.log_metrics(
-                {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
-                step=global_step,
-            )
+        mlflow_client.log_metrics(
+            mlflow_run_id,
+            {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
+            step=global_step,
+        )
         logger.info(f"[MLflow] Logged metrics at step {global_step}: {metrics}")
 
     logger.info(f"Checkpoint saved. Metrics: {metrics}")
 
 
 def save_model_for_inference(
-    model: FSDPModule,
-    world_rank: int,
-    mlflow_run_id: str | None = None,
-    experiment_name: str = "",
-) -> None:
+    model, world_rank,
+    mlflow_run_id=None, mlflow_client=None, experiment_name="",
+):
     logger.info("Preparing model for inference — all-gathering shards to rank 0...")
     with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
         save_file        = os.path.join(temp_checkpoint_dir, "full-model.pt")
@@ -236,13 +203,9 @@ def save_model_for_inference(
             torch.save(model_state_dict, save_file)
             logger.info(f"Saved complete model to {save_file}")
             checkpoint = ray.train.Checkpoint.from_directory(temp_checkpoint_dir)
-
-            # ── MLflow: log the full model artifact ──────────────────────────
-            if mlflow_run_id:
-                with mlflow.start_run(run_id=mlflow_run_id):
-                    mlflow.log_artifact(save_file, artifact_path="full_model")
+            if mlflow_run_id and mlflow_client:
+                mlflow_client.log_artifact(mlflow_run_id, save_file, artifact_path="full_model")
                 logger.info("[MLflow] Logged full-model.pt as artifact")
-
         ray.train.report({}, checkpoint=checkpoint, checkpoint_dir_name="full_model")
 
 
@@ -256,27 +219,25 @@ def train_func(config):
     world_size = ctx.get_world_size()
     is_rank0   = (world_rank == 0)
 
-    # ── MLflow setup (rank 0 creates/resumes the run; all ranks receive run_id) ──
-    # Workers communicate the run_id via the config dict that Ray broadcasts.
-    # We start the run here on rank 0, pass run_id via a Ray object store ref
-    # stored in config so every rank has it for conditional logging.
-    mlflow_run_id = config.get("mlflow_run_id")   # injected by driver (see below)
+    mlflow_run_id = config.get("mlflow_run_id")
 
+    # ── MLflow client setup (rank 0 only) ─────────────────────────────────────
+    # MlflowClient logs to an existing run without opening/closing it.
+    # The run lifecycle (RUNNING -> FINISHED/FAILED) is managed only by
+    # the driver process via set_terminated() after trainer.fit() returns.
+    mlflow_client = None
     if is_rank0 and mlflow_run_id:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        mlflow.set_experiment(MLFLOW_EXPERIMENT)
-        # Re-activate the run that the driver opened
-        with mlflow.start_run(run_id=mlflow_run_id):
-            mlflow.log_params({
-                "epochs":        config.get("epochs", 2),
-                "learning_rate": config.get("learning_rate", 1e-5),
-                "batch_size":    config.get("batch_size", 8),
-                "seq_len":       config.get("seq_len", SEQ_LEN),
-                "world_size":    world_size,
-                "model":         "gpt2-124M-scratch",
-                "dataset":       "TinyStories",
-            })
-        logger.info(f"[MLflow] Logging to run {mlflow_run_id} at {MLFLOW_TRACKING_URI}")
+        mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+        mlflow_client.log_params(mlflow_run_id, {
+            "epochs":        config.get("epochs", 2),
+            "learning_rate": config.get("learning_rate", 1e-5),
+            "batch_size":    config.get("batch_size", 8),
+            "seq_len":       config.get("seq_len", SEQ_LEN),
+            "world_size":    world_size,
+            "model":         "gpt2-124M-scratch",
+            "dataset":       "TinyStories",
+        })
+        logger.info(f"[MLflow] Client ready — run {mlflow_run_id} at {MLFLOW_TRACKING_URI}")
 
     # ── Model ─────────────────────────────────────────────────────────────────
     model  = init_model()
@@ -287,7 +248,7 @@ def train_func(config):
     optimizer = Adam(model.parameters(), lr=config.get("learning_rate", 1e-5))
 
     # ── Resume from checkpoint ────────────────────────────────────────────────
-    start_epoch = 0
+    start_epoch       = 0
     loaded_checkpoint = ray.train.get_checkpoint()
     if loaded_checkpoint:
         latest_epoch = load_fsdp_checkpoint(model, optimizer, loaded_checkpoint)
@@ -307,9 +268,7 @@ def train_func(config):
     total_batches = len(train_loader)
 
     logger.info(
-        f"Training config — "
-        f"epochs: {epochs} | "
-        f"batches/epoch: {total_batches} | "
+        f"Training config — epochs: {epochs} | batches/epoch: {total_batches} | "
         f"batch_size: {config.get('batch_size', 4)} | "
         f"seq_len: {config.get('seq_len', SEQ_LEN)} | "
         f"world_size: {world_size}"
@@ -350,11 +309,9 @@ def train_func(config):
                 if batch_idx % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     logger.info(
-                        f"[Rank {world_rank}] "
-                        f"Epoch {epoch+1}/{epochs} | "
+                        f"[Rank {world_rank}] Epoch {epoch+1}/{epochs} | "
                         f"Batch {batch_idx+1}/{total_batches} | "
-                        f"Loss: {loss.item():.4f} | "
-                        f"VRAM: {vram:.2f} GB"
+                        f"Loss: {loss.item():.4f} | VRAM: {vram:.2f} GB"
                     )
 
                 # ── checkpoint every 500 batches ──────────────────────────────
@@ -369,13 +326,13 @@ def train_func(config):
                         metrics={
                             "loss":       mid_loss,
                             "perplexity": torch.exp(torch.tensor(mid_loss)).item(),
-                            "epoch":      epoch,
-                            "batch":      batch_idx,
+                            "epoch":      float(epoch),
+                            "batch":      float(batch_idx),
                         },
-                        epoch=epoch,
-                        batch=batch_idx,
+                        epoch=epoch, batch=batch_idx,
                         is_rank0=is_rank0,
                         mlflow_run_id=mlflow_run_id,
+                        mlflow_client=mlflow_client,
                     )
 
             # ── end-of-epoch checkpoint ───────────────────────────────────────
@@ -385,39 +342,36 @@ def train_func(config):
                 "perplexity": torch.exp(torch.tensor(avg_loss)).item(),
             }
             report_metrics_and_save_fsdp_checkpoint(
-                model, optimizer, metrics, epoch,
-                batch=total_batches,
+                model, optimizer, metrics,
+                epoch=epoch, batch=total_batches,
                 is_rank0=is_rank0,
                 mlflow_run_id=mlflow_run_id,
+                mlflow_client=mlflow_client,
             )
             logger.info(f"Epoch {epoch+1}/{epochs} complete | {metrics}")
 
-    # ── Export memory profile and log to MLflow ───────────────────────────────
+    # ── Export memory profiles and log to MLflow ──────────────────────────────
     run_name    = ctx.get_experiment_name()
     profile_dir = f"/mnt/cluster_storage/{run_name}"
     os.makedirs(profile_dir, exist_ok=True)
     profile_path = f"{profile_dir}/rank{world_rank}_memory_profile.html"
-
     prof.export_memory_timeline(profile_path)
     logger.info(f"[Rank {world_rank}] Memory profile saved to {profile_path}")
 
-    # All ranks export their profile, but only rank 0 logs them to MLflow
-    # (MLflow artifact logging is not distributed-safe from multiple processes)
-    if is_rank0 and mlflow_run_id:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        with mlflow.start_run(run_id=mlflow_run_id):
-            # Log all ranks' memory profiles — rank 0 can see all files on
-            # shared storage and uploads them in one shot
-            for rank_id in range(world_size):
-                rank_profile = f"{profile_dir}/rank{rank_id}_memory_profile.html"
-                if os.path.exists(rank_profile):
-                    mlflow.log_artifact(rank_profile, artifact_path="memory_profiles")
-                    logger.info(f"[MLflow] Logged memory profile for rank {rank_id}")
+    if is_rank0 and mlflow_run_id and mlflow_client:
+        for rank_id in range(world_size):
+            rank_profile = f"{profile_dir}/rank{rank_id}_memory_profile.html"
+            if os.path.exists(rank_profile):
+                mlflow_client.log_artifact(
+                    mlflow_run_id, rank_profile, artifact_path="memory_profiles"
+                )
+                logger.info(f"[MLflow] Logged memory profile for rank {rank_id}")
 
     # ── Save full model for inference ─────────────────────────────────────────
     save_model_for_inference(
         model, world_rank,
         mlflow_run_id=mlflow_run_id,
+        mlflow_client=mlflow_client,
         experiment_name=run_name,
     )
 
@@ -431,37 +385,42 @@ if __name__ == "__main__":
         runtime_env={"env_vars": _NCCL_ENV},
     )
 
-    # ── Create the MLflow run on the driver BEFORE launching workers ──────────
-    # This gives us a stable run_id we can pass into every worker via config.
-    # Workers do NOT create their own runs — they reuse this run_id.
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+    # ── Driver creates the run via MlflowClient and keeps it RUNNING ──────────
+    # The driver never calls mlflow.start_run() — it uses the client API
+    # exclusively. This means the run stays in RUNNING state until the driver
+    # explicitly calls set_terminated() after training completes.
+    mlflow_client_driver = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    experiment = mlflow_client_driver.get_experiment_by_name(MLFLOW_EXPERIMENT)
+    if experiment is None:
+        experiment_id = mlflow_client_driver.create_experiment(MLFLOW_EXPERIMENT)
+        logger.info(f"Created MLflow experiment: {MLFLOW_EXPERIMENT}")
+    else:
+        experiment_id = experiment.experiment_id
+        logger.info(f"Using existing MLflow experiment: {MLFLOW_EXPERIMENT} (id={experiment_id})")
 
     experiment_name = f"gpt2_scratch_tinystories_{uuid.uuid4().hex[:8]}"
-
-    # Start the run (driver opens it; workers reuse the id; driver closes it)
-    active_run = mlflow.start_run(run_name=experiment_name)
-    mlflow_run_id = active_run.info.run_id
-    print(f"MLflow run created: {mlflow_run_id}")
-    print(f"Track at: {MLFLOW_TRACKING_URI}/#/experiments/")
-
-    scaling_config = ray.train.ScalingConfig(
-        num_workers=8,
-        use_gpu=True,
+    run             = mlflow_client_driver.create_run(
+        experiment_id=experiment_id,
+        run_name=experiment_name,
     )
+    mlflow_run_id = run.info.run_id
+
+    print(f"MLflow run created : {mlflow_run_id}")
+    print(f"MLflow UI          : {MLFLOW_TRACKING_URI}/#/experiments/{experiment_id}/runs/{mlflow_run_id}")
+
+    scaling_config = ray.train.ScalingConfig(num_workers=8, use_gpu=True)
 
     train_loop_config = {
         "epochs":        2,
         "learning_rate": 1e-5,
         "batch_size":    8,
         "seq_len":       1024,
-        # Pass the run_id so workers can log to the same MLflow run
         "mlflow_run_id": mlflow_run_id,
     }
 
-    # ── Resume from checkpoint (set to None for fresh start) ──────────────────
     RESUME_FROM_CHECKPOINT = None
-    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_ee47e408/checkpoint_..."
+    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_.../checkpoint_..."
 
     run_config = ray.train.RunConfig(
         storage_path="/mnt/cluster_storage/",
@@ -480,37 +439,25 @@ if __name__ == "__main__":
         ),
     )
 
-    print("Starting GPT-2 from-scratch training on TinyStories...")
-    print(f"Ray experiment : {experiment_name}")
-    print(f"MLflow run ID  : {mlflow_run_id}")
-    print(f"MLflow UI      : {MLFLOW_TRACKING_URI}")
+    print(f"Starting GPT-2 training | Ray experiment: {experiment_name}")
     print()
 
     try:
         result = trainer.fit()
         print("Training completed successfully!")
-
-        # Mark the MLflow run as finished
-        mlflow.end_run()
-
+        # Driver is the sole owner of the run lifecycle
+        mlflow_client_driver.set_terminated(mlflow_run_id, status="FINISHED")
+        print(f"MLflow run marked FINISHED: {mlflow_run_id}")
     except Exception as e:
-        # Mark as failed so it's visible in the MLflow UI
-        mlflow.end_run(status="FAILED")
+        mlflow_client_driver.set_terminated(mlflow_run_id, status="FAILED")
         raise
 
     # ── Inference ─────────────────────────────────────────────────────────────
+    PATH_TO_FULL_MODEL = f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
 
-    PATH_TO_FULL_MODEL = (
-        f"/mnt/cluster_storage/{experiment_name}/full_model/full-model.pt"
-    )
-
-    tokenizer = GPT2Tokenizer.from_pretrained(
-        Path(TOKENIZER_PATH),
-        local_files_only=True,
-    )
-    model = init_model()
-    state_dict = torch.load(PATH_TO_FULL_MODEL, map_location="cpu")
-    model.load_state_dict(state_dict)
+    tokenizer = GPT2Tokenizer.from_pretrained(Path(TOKENIZER_PATH), local_files_only=True)
+    model     = init_model()
+    model.load_state_dict(torch.load(PATH_TO_FULL_MODEL, map_location="cpu"))
     model.eval()
 
     prompt = "Once upon a time there was a little girl"
