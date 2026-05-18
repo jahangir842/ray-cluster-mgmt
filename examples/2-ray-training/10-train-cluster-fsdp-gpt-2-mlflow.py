@@ -606,7 +606,7 @@ if __name__ == "__main__":
     print()
 
     train_loop_config = {
-        "epochs":               2,
+        "epochs":               1,
         "learning_rate":        1e-5,
         "lr_min":               1e-6,
         "batch_size":           8,
