@@ -317,7 +317,7 @@ def train_func(config):
     is_rank0   = (world_rank == 0)
 
     mlflow_run_id = config.get("mlflow_run_id")
-    epochs        = config.get("epochs", 2)
+    epochs        = config.get("epochs", 1)
     batch_size    = config.get("batch_size", 8)
     lr            = config.get("learning_rate", 1e-5)
     seq_len       = config.get("seq_len", SEQ_LEN)
