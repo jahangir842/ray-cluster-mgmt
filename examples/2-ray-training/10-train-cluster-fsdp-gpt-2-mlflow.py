@@ -38,7 +38,7 @@ os.environ["RAY_DEDUP_LOGS"] = "0"
 # Head node IP — MLflow server runs here. Workers reach it via this address.
 # Change this if your head node IP is different.
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
-MLFLOW_EXPERIMENT   = "gpt2-tinystories"
+MLFLOW_EXPERIMENT   = "gpt2-tinystories-1"
 
 # MLFLOW_TRACKING_URI is included in _NCCL_ENV so Ray's runtime_env broadcasts
 # it to every worker process on every node — this is what makes workers connect

@@ -1,0 +1,16 @@
+# Stop current server
+kill $(cat /tmp/mlflow_server.pid)
+
+# Restart with CORS + allowed-hosts fix
+nohup mlflow server \
+    --backend-store-uri    "sqlite:////mnt/cluster_storage/mlflow/mlflow.db" \
+    --default-artifact-root "/mnt/cluster_storage/mlflow/artifacts" \
+    --host                 "0.0.0.0" \
+    --port                 "5000" \
+    --serve-artifacts \
+    --cors-allowed-origins "*" \
+    --allowed-hosts        "*" \
+    > /tmp/mlflow_server.log 2>&1 &
+
+echo $! > /tmp/mlflow_server.pid
+echo "MLflow restarted (PID $(cat /tmp/mlflow_server.pid))"
