@@ -34,11 +34,22 @@ from torch.distributed.checkpoint.stateful import Stateful
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 os.environ["RAY_DEDUP_LOGS"] = "0"
 
+# ── MLflow config ─────────────────────────────────────────────────────────────
+# Head node IP — MLflow server runs here. Workers reach it via this address.
+# Change this if your head node IP is different.
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
+MLFLOW_EXPERIMENT   = "gpt2-tinystories"
+
+# MLFLOW_TRACKING_URI is included in _NCCL_ENV so Ray's runtime_env broadcasts
+# it to every worker process on every node — this is what makes workers connect
+# to the correct MLflow server instead of localhost.
 _NCCL_ENV = {
-    "NCCL_SOCKET_IFNAME": "enp0s31f6,eno1",
-    "GLOO_SOCKET_IFNAME": "enp0s31f6,eno1",
+    "NCCL_SOCKET_IFNAME":    "enp0s31f6,eno1",
+    "GLOO_SOCKET_IFNAME":    "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-    "RAY_DEDUP_LOGS": "0",
+    "RAY_DEDUP_LOGS":        "0",
+    "MLFLOW_TRACKING_URI":   MLFLOW_TRACKING_URI,   # ← broadcast to all workers
+    "TRANSFORMERS_CACHE":    "/mnt/cluster_storage/.cache/huggingface",  # ← fix cache warning
 }
 os.environ.update(_NCCL_ENV)
 
@@ -53,12 +64,6 @@ SEQ_LEN = 1024
 
 TOKENIZER_PATH  = "/mnt/cluster_storage/datasets/gpt2_tokenizer"
 TOKENIZED_PATH  = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
-
-# ── MLflow config ─────────────────────────────────────────────────────────────
-# Set MLFLOW_TRACKING_URI to your head node's IP before running.
-# You can also export it in your shell:  export MLFLOW_TRACKING_URI=http://<HEAD_IP>:5000
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
-MLFLOW_EXPERIMENT   = "gpt2-tinystories"
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
