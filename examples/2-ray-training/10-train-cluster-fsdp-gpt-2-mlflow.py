@@ -176,11 +176,8 @@ def report_metrics_and_save_fsdp_checkpoint(
 
     if is_rank0 and mlflow_run_id and mlflow_client:
         global_step = epoch * 10_000 + batch
-        mlflow_client.log_metrics(
-            mlflow_run_id,
-            {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
-            step=global_step,
-        )
+        for k, v in {kk: vv for kk, vv in metrics.items() if isinstance(vv, (int, float))}.items():
+            mlflow_client.log_metric(mlflow_run_id, k, v, step=global_step)
         logger.info(f"[MLflow] Logged metrics at step {global_step}: {metrics}")
 
     logger.info(f"Checkpoint saved. Metrics: {metrics}")
@@ -228,7 +225,7 @@ def train_func(config):
     mlflow_client = None
     if is_rank0 and mlflow_run_id:
         mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
-        mlflow_client.log_params(mlflow_run_id, {
+        for k, v in {
             "epochs":        config.get("epochs", 2),
             "learning_rate": config.get("learning_rate", 1e-5),
             "batch_size":    config.get("batch_size", 8),
@@ -236,7 +233,8 @@ def train_func(config):
             "world_size":    world_size,
             "model":         "gpt2-124M-scratch",
             "dataset":       "TinyStories",
-        })
+        }.items():
+            mlflow_client.log_param(mlflow_run_id, k, v)
         logger.info(f"[MLflow] Client ready — run {mlflow_run_id} at {MLFLOW_TRACKING_URI}")
 
     # ── Model ─────────────────────────────────────────────────────────────────
