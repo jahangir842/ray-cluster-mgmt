@@ -354,10 +354,12 @@ def train_func(config):
     # ── Resume from checkpoint ────────────────────────────────────────────────
     start_epoch  = 0
     global_step  = 0
+    is_resumed   = False
     loaded_ckpt  = ray.train.get_checkpoint()
     if loaded_ckpt:
         start_epoch, global_step = load_fsdp_checkpoint(model, optimizer, scheduler, loaded_ckpt)
-        start_epoch = (start_epoch or 0) + 1
+        start_epoch = start_epoch or 0   # stay on same epoch — mid-epoch resume
+        is_resumed  = True
         logger.info(f"Resuming from epoch {start_epoch}, global_step {global_step}")
 
     # ── Datasets ──────────────────────────────────────────────────────────────
@@ -419,16 +421,26 @@ def train_func(config):
             mlflow_client.log_param(mlflow_run_id, k, v)
 
     # ── Profiler ──────────────────────────────────────────────────────────────
-    with torch.profiler.profile(
-        activities=[
-            torch.profiler.ProfilerActivity.CPU,
-            torch.profiler.ProfilerActivity.CUDA,
-        ],
-        schedule=torch.profiler.schedule(wait=0, warmup=0, active=6, repeat=1),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True,
-    ) as prof:
+    # Skip profiling on resumed runs — the profiler schedule (active=6 steps)
+    # would complete instantly on resume with no data, crashing export_memory_timeline.
+    _use_profiler = not is_resumed
+    if _use_profiler:
+        _prof_ctx = torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(wait=0, warmup=0, active=6, repeat=1),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        )
+    else:
+        import contextlib
+        _prof_ctx = contextlib.nullcontext()
+        logger.info("Skipping profiler on resumed run.")
+
+    with _prof_ctx as prof:
 
         running_train_loss = 0.0
         running_batches    = 0
@@ -450,7 +462,8 @@ def train_func(config):
                 optimizer.step()
                 scheduler.step()
 
-                prof.step()
+                if prof is not None:
+                    prof.step()
 
                 running_train_loss += loss.item()
                 running_batches    += 1
@@ -541,10 +554,17 @@ def train_func(config):
     os.makedirs(profile_dir, exist_ok=True)
 
     profile_path = f"{profile_dir}/rank{world_rank}_memory_profile.html"
-    prof.export_memory_timeline(profile_path)
-    logger.info(f"[Rank {world_rank}] Memory profile saved to {profile_path}")
+    if prof is not None:
+        try:
+            prof.export_memory_timeline(profile_path)
+            logger.info(f"[Rank {world_rank}] Memory profile saved to {profile_path}")
+        except (ValueError, Exception) as e:
+            logger.warning(f"[Rank {world_rank}] Memory profile export skipped: {e}")
+            profile_path = None   # don't try to log a non-existent file
+    else:
+        profile_path = None
 
-    if is_rank0 and mlflow_run_id and mlflow_client:
+    if is_rank0 and mlflow_run_id and mlflow_client and not is_resumed:
         for rank_id in range(world_size):
             p = f"{profile_dir}/rank{rank_id}_memory_profile.html"
             if os.path.exists(p):
@@ -615,7 +635,7 @@ if __name__ == "__main__":
         "adam_beta2":           0.95,
         "weight_decay":         0.1,
         "val_every_n_batches":  500,    # validation frequency
-        "total_steps_estimate": 7201 * 2,
+        "total_steps_estimate": 7201 * 1,
         "mlflow_run_id":        mlflow_run_id,
     }
 
