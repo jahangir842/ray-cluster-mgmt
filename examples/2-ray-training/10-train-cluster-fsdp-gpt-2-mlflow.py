@@ -199,15 +199,17 @@ class AppState(Stateful):
         self.global_step = global_step
 
     def state_dict(self):
+        # mlflow_run_id and ray_experiment are intentionally NOT stored here.
+        # DCP requires exact key matching between save and load — adding new keys
+        # breaks loading of older checkpoints. Instead we persist these in
+        # run_meta.json alongside the checkpoint directory (driver reads it).
         model_sd, optim_sd = get_state_dict(self.model, self.optimizer)
         return {
-            "model":        model_sd,
-            "optim":        optim_sd,
-            "scheduler":    self.scheduler.state_dict() if self.scheduler else None,
-            "epoch":        self.epoch,
-            "global_step":  self.global_step,
-            "mlflow_run_id": self.mlflow_run_id if hasattr(self, "mlflow_run_id") else None,
-            "ray_experiment": self.ray_experiment if hasattr(self, "ray_experiment") else None,
+            "model":       model_sd,
+            "optim":       optim_sd,
+            "scheduler":   self.scheduler.state_dict() if self.scheduler else None,
+            "epoch":       self.epoch,
+            "global_step": self.global_step,
         }
 
     def load_state_dict(self, sd):
@@ -218,10 +220,8 @@ class AppState(Stateful):
         )
         if self.scheduler and sd.get("scheduler"):
             self.scheduler.load_state_dict(sd["scheduler"])
-        self.epoch          = sd.get("epoch", 0)
-        self.global_step    = sd.get("global_step", 0)
-        self.mlflow_run_id  = sd.get("mlflow_run_id")
-        self.ray_experiment = sd.get("ray_experiment")
+        self.epoch       = sd.get("epoch", 0)
+        self.global_step = sd.get("global_step", 0)
 
 
 def load_checkpoint(model, optimizer, scheduler, path: str):
@@ -230,16 +230,8 @@ def load_checkpoint(model, optimizer, scheduler, path: str):
     app_state = AppState(model, optimizer, scheduler)
     with ckpt.as_directory() as ckpt_dir:
         dcp.load(state_dict={"app": app_state}, checkpoint_id=ckpt_dir)
-    logger.info(
-        f"Resumed — epoch={app_state.epoch}, global_step={app_state.global_step}, "
-        f"mlflow_run_id={app_state.mlflow_run_id}"
-    )
-    return (
-        app_state.epoch or 0,
-        app_state.global_step or 0,
-        app_state.mlflow_run_id,     # reuse same MLflow run
-        app_state.ray_experiment,    # reuse same Ray experiment name
-    )
+    logger.info(f"Resumed — epoch={app_state.epoch}, global_step={app_state.global_step}")
+    return app_state.epoch or 0, app_state.global_step or 0
 
 
 def save_checkpoint(
@@ -350,21 +342,12 @@ def train_func(config):
     start_epoch          = 0
     global_step          = 0
     is_resumed           = False
-    ckpt_mlflow_run_id   = None
     if resume_path:
-        start_epoch, global_step, ckpt_mlflow_run_id, _ = load_checkpoint(
-            model, optimizer, scheduler, resume_path
-        )
+        start_epoch, global_step = load_checkpoint(model, optimizer, scheduler, resume_path)
         is_resumed = True
-        # Use the MLflow run_id from the checkpoint so all metrics go to the
-        # same run — overrides the new run_id passed via config
-        if ckpt_mlflow_run_id:
-            mlflow_run_id = ckpt_mlflow_run_id
-            logger.info(f"[MLflow] Reusing run from checkpoint: {mlflow_run_id}")
-        # Reinitialize client with correct run_id
-        if is_rank0 and mlflow_run_id:
-            mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
-            logger.info(f"[MLflow] Client updated — run {mlflow_run_id}")
+        # mlflow_run_id comes from run_meta.json read by the driver and passed
+        # via train_loop_config — it's already set correctly in mlflow_run_id above.
+        logger.info(f"[MLflow] Resuming — using run_id from config: {mlflow_run_id}")
 
     # ── Dataset ───────────────────────────────────────────────────────────────
     train_loader, val_loader = build_dataloaders(batch_size, seq_len)
@@ -643,8 +626,7 @@ if __name__ == "__main__":
     # ── Resume config ─────────────────────────────────────────────────────────
     # Set RESUME_FROM_CHECKPOINT to a checkpoint directory path to resume,
     # or leave as None for a fresh training run.
-    # RESUME_FROM_CHECKPOINT = None
-    RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
+    RESUME_FROM_CHECKPOINT = None
     # Example:
     # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
 
