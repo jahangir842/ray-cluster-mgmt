@@ -588,9 +588,9 @@ if __name__ == "__main__":
     # ── Resume config ─────────────────────────────────────────────────────────
     # Set RESUME_FROM_CHECKPOINT to a checkpoint directory path to resume,
     # or leave as None for a fresh training run.
-    RESUME_FROM_CHECKPOINT = None
+    #RESUME_FROM_CHECKPOINT = None
     # Example:
-    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
+    RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
