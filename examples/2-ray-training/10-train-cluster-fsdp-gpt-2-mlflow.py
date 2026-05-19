@@ -417,7 +417,24 @@ def train_func(config):
 
             model.train()
 
+            # On resume: skip batches already completed in this epoch.
+            # global_step tells us how many steps were done total; since we
+            # reset batch_idx each run, we fast-forward through the DataLoader
+            # without doing any computation on already-trained batches.
+            batches_to_skip = global_step % total_batches if is_resumed else 0
+            if batches_to_skip > 0:
+                logger.info(f"Skipping {batches_to_skip} already-completed batches...")
+                skipped = 0
+                for _ in train_loader:
+                    skipped += 1
+                    if skipped >= batches_to_skip:
+                        break
+                logger.info(f"Fast-forwarded {batches_to_skip} batches. Resuming from batch {batches_to_skip+1}.")
+                is_resumed = False  # only skip on first epoch of resume
+
             for batch_idx, input_ids in enumerate(train_loader):
+                # Adjust batch_idx to reflect true position in epoch
+                batch_idx = batch_idx + batches_to_skip
 
                 # Forward + backward
                 outputs = model(input_ids=input_ids, labels=input_ids)
@@ -435,18 +452,18 @@ def train_func(config):
                 global_step  += 1
 
                 # Console log every 10 batches
-                if batch_idx % 10 == 0:
+                if global_step % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     logger.info(
                         f"[Rank {world_rank}] Epoch {epoch+1}/{epochs} | "
-                        f"Batch {batch_idx+1}/{total_batches} | "
+                        f"Step {global_step} | Batch {batch_idx+1}/{total_batches} | "
                         f"Loss: {loss.item():.4f} | "
                         f"LR: {scheduler.get_last_lr()[0]:.2e} | "
                         f"VRAM: {vram:.2f} GB"
                     )
 
-                # Log train metrics to MLflow every LOG_EVERY batches
-                if is_rank0 and mlflow_client and batch_idx % LOG_EVERY == 0:
+                # Log train metrics to MLflow every LOG_EVERY steps
+                if is_rank0 and mlflow_client and global_step % LOG_EVERY == 0:
                     mlflow_client.log_metric(
                         mlflow_run_id, "train_loss", loss.item(), step=global_step
                     )
@@ -467,8 +484,8 @@ def train_func(config):
                         epoch + batch_idx / total_batches, step=global_step
                     )
 
-                # Validation + checkpoint every VAL_EVERY / CKPT_EVERY batches
-                if batch_idx > 0 and batch_idx % CKPT_EVERY == 0:
+                # Validation + checkpoint every CKPT_EVERY steps
+                if global_step > 0 and global_step % CKPT_EVERY == 0:
                     val_metrics = run_validation(model, val_loader, device, max_batches=100)
 
                     if is_rank0 and mlflow_client:
@@ -588,9 +605,9 @@ if __name__ == "__main__":
     # ── Resume config ─────────────────────────────────────────────────────────
     # Set RESUME_FROM_CHECKPOINT to a checkpoint directory path to resume,
     # or leave as None for a fresh training run.
-    #RESUME_FROM_CHECKPOINT = None
+    RESUME_FROM_CHECKPOINT = None
     # Example:
-    RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
+    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
