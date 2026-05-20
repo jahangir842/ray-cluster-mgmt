@@ -1,4 +1,5 @@
 import os
+import json
 import contextlib
 import tempfile
 import uuid
@@ -42,7 +43,7 @@ os.environ["RAY_DEDUP_LOGS"]       = "0"
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://192.168.3.73:5000")
 MLFLOW_EXPERIMENT   = "gpt2-tinystories"
 
-# ── Cluster network + env broadcast to all workers ────────────────────────────
+# ── Cluster env — broadcast to all workers via Ray runtime_env ────────────────
 _NCCL_ENV = {
     "NCCL_SOCKET_IFNAME":      "enp0s31f6,eno1",
     "GLOO_SOCKET_IFNAME":      "enp0s31f6,eno1",
@@ -70,10 +71,9 @@ logger = logging.getLogger(__name__)
 SEQ_LEN        = 1024
 TOKENIZER_PATH = "/mnt/cluster_storage/datasets/gpt2_tokenizer"
 TOKENIZED_PATH = "/mnt/cluster_storage/datasets/tinystories_tokenized.pt"
-VAL_SPLIT      = 0.02      # 2% held out for validation
-LOG_EVERY      = 50        # log train_loss to MLflow every N batches
-VAL_EVERY      = 500       # run validation every N batches
-CKPT_EVERY     = 500       # save checkpoint every N batches
+VAL_SPLIT      = 0.02    # 2% held out for validation
+LOG_EVERY      = 50      # log train_loss to MLflow every N steps
+CKPT_EVERY     = 500     # save checkpoint + run validation every N steps
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -93,8 +93,8 @@ class TinyStoriesDataset(Dataset):
 
 def build_dataloaders(batch_size: int, seq_len: int):
     logger.info(f"Loading dataset from {TOKENIZED_PATH} ...")
-    raw    = torch.load(TOKENIZED_PATH)
-    n_val  = int(len(raw) * VAL_SPLIT)
+    raw     = torch.load(TOKENIZED_PATH)
+    n_val   = int(len(raw) * VAL_SPLIT)
     n_train = len(raw) - n_val
 
     train_data, val_data = random_split(
@@ -102,7 +102,7 @@ def build_dataloaders(batch_size: int, seq_len: int):
         [n_train, n_val],
         generator=torch.Generator().manual_seed(42),
     )
-    logger.info(f"Dataset split — train: {n_train:,} | val: {n_val:,} sequences")
+    logger.info(f"Dataset — train: {n_train:,} | val: {n_val:,} sequences")
 
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True,  drop_last=True)
     val_loader   = DataLoader(val_data,   batch_size=batch_size, shuffle=False, drop_last=True)
@@ -117,16 +117,16 @@ def init_model() -> torch.nn.Module:
     from transformers import GPT2Config
     logger.info("Initializing blank GPT-2 (no pretrained weights)...")
     config = GPT2Config(
-        vocab_size   = 50257,
-        n_positions  = SEQ_LEN,
-        n_embd       = 768,
-        n_layer      = 12,
-        n_head       = 12,
-        n_inner      = 3072,
-        resid_pdrop  = 0.1,
-        attn_pdrop   = 0.1,
-        embd_pdrop   = 0.1,
-        loss_type    = "ForCausalLMLoss",
+        vocab_size  = 50257,
+        n_positions = SEQ_LEN,
+        n_embd      = 768,
+        n_layer     = 12,
+        n_head      = 12,
+        n_inner     = 3072,
+        resid_pdrop = 0.1,
+        attn_pdrop  = 0.1,
+        embd_pdrop  = 0.1,
+        loss_type   = "ForCausalLMLoss",
     )
     model        = GPT2LMHeadModel(config)
     total_params = sum(p.numel() for p in model.parameters())
@@ -143,7 +143,6 @@ def shard_model(model: torch.nn.Module):
     world_size = ray.train.get_context().get_world_size()
     mesh       = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp",))
     mp_policy  = MixedPrecisionPolicy(param_dtype=torch.float32, reduce_dtype=torch.float32)
-
     for block in model.transformer.h:
         fully_shard(block, mesh=mesh, reshard_after_forward=True, mp_policy=mp_policy)
     fully_shard(model, mesh=mesh, reshard_after_forward=True, mp_policy=mp_policy)
@@ -167,10 +166,9 @@ def run_validation(model, val_loader, device, max_batches: int = 100) -> dict:
             break
         input_ids = input_ids.to(device)
         outputs   = model(input_ids=input_ids, labels=input_ids)
-
-        logits  = outputs.logits[:, :-1, :]
-        targets = input_ids[:, 1:]
-        preds   = logits.argmax(dim=-1)
+        logits    = outputs.logits[:, :-1, :]
+        targets   = input_ids[:, 1:]
+        preds     = logits.argmax(dim=-1)
 
         total_loss    += outputs.loss.item()
         total_correct += (preds == targets).sum().item()
@@ -191,6 +189,13 @@ def run_validation(model, val_loader, device, max_batches: int = 100) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class AppState(Stateful):
+    """DCP-compatible state wrapper.
+
+    IMPORTANT: mlflow_run_id and ray_experiment are intentionally NOT in
+    state_dict(). DCP enforces exact key matching between save and load —
+    adding new keys breaks loading of older checkpoints. We persist these
+    in run_meta.json alongside the checkpoint directory instead.
+    """
     def __init__(self, model, optimizer=None, scheduler=None, epoch=None, global_step=None):
         self.model       = model
         self.optimizer   = optimizer
@@ -199,10 +204,6 @@ class AppState(Stateful):
         self.global_step = global_step
 
     def state_dict(self):
-        # mlflow_run_id and ray_experiment are intentionally NOT stored here.
-        # DCP requires exact key matching between save and load — adding new keys
-        # breaks loading of older checkpoints. Instead we persist these in
-        # run_meta.json alongside the checkpoint directory (driver reads it).
         model_sd, optim_sd = get_state_dict(self.model, self.optimizer)
         return {
             "model":       model_sd,
@@ -225,12 +226,13 @@ class AppState(Stateful):
 
 
 def load_checkpoint(model, optimizer, scheduler, path: str):
+    """Load DCP checkpoint. Returns (epoch, global_step)."""
     logger.info(f"Loading checkpoint from {path} ...")
     ckpt      = ray.train.Checkpoint.from_directory(path)
     app_state = AppState(model, optimizer, scheduler)
     with ckpt.as_directory() as ckpt_dir:
         dcp.load(state_dict={"app": app_state}, checkpoint_id=ckpt_dir)
-    logger.info(f"Resumed — epoch={app_state.epoch}, global_step={app_state.global_step}")
+    logger.info(f"Checkpoint loaded — epoch={app_state.epoch}, global_step={app_state.global_step}")
     return app_state.epoch or 0, app_state.global_step or 0
 
 
@@ -240,19 +242,22 @@ def save_checkpoint(
     is_rank0, mlflow_run_id, mlflow_client,
     ray_experiment=None,
 ):
-    app_state              = AppState(model, optimizer, scheduler, epoch, global_step)
-    app_state.mlflow_run_id  = mlflow_run_id   # persist so resume reuses same MLflow run
-    app_state.ray_experiment = ray_experiment
+    """Save DCP checkpoint, write run_meta.json, report to Ray, log to MLflow."""
+    logger.info(f"Saving checkpoint at step {global_step}...")
+
     with tempfile.TemporaryDirectory() as tmp:
         dcp.save(
-            state_dict={"app": app_state},
+            state_dict={"app": AppState(model, optimizer, scheduler, epoch, global_step)},
             checkpoint_id=tmp,
         )
 
-        # Save run_meta.json so the driver can find mlflow_run_id on resume
+        # run_meta.json — lets the driver reuse the same MLflow run on resume
+        # without putting mlflow_run_id inside the DCP state dict
         if is_rank0 and mlflow_run_id:
-            import json
-            run_meta = {"mlflow_run_id": mlflow_run_id, "ray_experiment": ray_experiment or ""}
+            run_meta = {
+                "mlflow_run_id":  mlflow_run_id,
+                "ray_experiment": ray_experiment or "",
+            }
             with open(os.path.join(tmp, "run_meta.json"), "w") as f:
                 json.dump(run_meta, f)
 
@@ -270,15 +275,16 @@ def save_checkpoint(
                     mlflow_client.log_artifact(mlflow_run_id, fpath, artifact_path=artifact_path)
             logger.info(f"[MLflow] Checkpoint artifacts → {artifact_path}")
 
-    # Log metrics
+    # Log metrics to MLflow
     if is_rank0 and mlflow_run_id and mlflow_client:
         for k, v in metrics.items():
             if isinstance(v, (int, float)):
                 mlflow_client.log_metric(mlflow_run_id, k, v, step=global_step)
-        logger.info(f"[MLflow] Checkpoint metrics @ step {global_step}: {metrics}")
+        logger.info(f"[MLflow] Metrics @ step {global_step}: {metrics}")
 
 
 def save_full_model(model, world_rank, mlflow_run_id, mlflow_client):
+    """Gather full model to rank 0, save, and log to MLflow."""
     logger.info("Gathering full model to rank 0...")
     with tempfile.TemporaryDirectory() as tmp:
         save_file = os.path.join(tmp, "full-model.pt")
@@ -306,18 +312,17 @@ def train_func(config):
     world_size = ctx.get_world_size()
     is_rank0   = (world_rank == 0)
 
-    # Config
     epochs        = config.get("epochs", 1)
     batch_size    = config.get("batch_size", 8)
     lr            = config.get("learning_rate", 1e-5)
     seq_len       = config.get("seq_len", SEQ_LEN)
     mlflow_run_id = config.get("mlflow_run_id")
-    resume_path   = config.get("resume_checkpoint_path")   # None = fresh start
+    resume_path   = config.get("resume_checkpoint_path")
 
     # ── MLflow client (rank 0 only) ───────────────────────────────────────────
-    # Use MlflowClient directly — NEVER use `with mlflow.start_run()` in workers.
-    # Context managers close the run when the with-block exits, marking it
-    # "Finished" in seconds. The client API logs without touching run lifecycle.
+    # Always use MlflowClient directly — never `with mlflow.start_run()`.
+    # Context managers close the run when the with-block exits, which marks
+    # it "Finished" immediately. Client API logs without touching lifecycle.
     mlflow_client = None
     if is_rank0 and mlflow_run_id:
         mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
@@ -330,7 +335,7 @@ def train_func(config):
     shard_model(model)
 
     # ── Optimizer + LR scheduler ──────────────────────────────────────────────
-    optimizer   = Adam(
+    optimizer = Adam(
         model.parameters(), lr=lr,
         betas=(config.get("adam_beta1", 0.9), config.get("adam_beta2", 0.95)),
         weight_decay=config.get("weight_decay", 0.1),
@@ -339,15 +344,15 @@ def train_func(config):
     scheduler   = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=config.get("lr_min", 1e-6))
 
     # ── Resume from checkpoint ────────────────────────────────────────────────
-    start_epoch          = 0
-    global_step          = 0
-    is_resumed           = False
+    start_epoch = 0
+    global_step = 0
+    is_resumed  = False
     if resume_path:
         start_epoch, global_step = load_checkpoint(model, optimizer, scheduler, resume_path)
         is_resumed = True
-        # mlflow_run_id comes from run_meta.json read by the driver and passed
-        # via train_loop_config — it's already set correctly in mlflow_run_id above.
-        logger.info(f"[MLflow] Resuming — using run_id from config: {mlflow_run_id}")
+        # mlflow_run_id is already correct — it was read from run_meta.json
+        # by the driver and passed here via train_loop_config
+        logger.info(f"[MLflow] Resuming into run: {mlflow_run_id}")
 
     # ── Dataset ───────────────────────────────────────────────────────────────
     train_loader, val_loader = build_dataloaders(batch_size, seq_len)
@@ -361,55 +366,55 @@ def train_func(config):
         f"resumed={is_resumed} | start_epoch={start_epoch} | global_step={global_step}"
     )
 
-    # ── Log hyperparams to MLflow (rank 0, fresh runs only) ──────────────────
+    # ── Log hyperparams to MLflow (rank 0 only) ───────────────────────────────
     if is_rank0 and mlflow_client:
-        params = {
+        for k, v in {
             # Architecture
-            "model":              "gpt2-124M-scratch",
-            "n_layer":            12,
-            "n_head":             12,
-            "n_embd":             768,
-            "n_inner":            3072,
-            "vocab_size":         50257,
-            "resid_pdrop":        0.1,
-            "attn_pdrop":         0.1,
-            "embd_pdrop":         0.1,
+            "model":            "gpt2-124M-scratch",
+            "n_layer":          12,
+            "n_head":           12,
+            "n_embd":           768,
+            "n_inner":          3072,
+            "vocab_size":       50257,
+            "resid_pdrop":      0.1,
+            "attn_pdrop":       0.1,
+            "embd_pdrop":       0.1,
             # Training
-            "epochs":             epochs,
-            "batch_size":         batch_size,
-            "seq_len":            seq_len,
-            "world_size":         world_size,
-            "effective_batch":    batch_size * world_size,
-            "tokens_per_step":    batch_size * world_size * seq_len,
+            "epochs":           epochs,
+            "batch_size":       batch_size,
+            "seq_len":          seq_len,
+            "world_size":       world_size,
+            "effective_batch":  batch_size * world_size,
+            "tokens_per_step":  batch_size * world_size * seq_len,
             # Optimizer
-            "optimizer":          "Adam",
-            "learning_rate":      lr,
-            "lr_min":             config.get("lr_min", 1e-6),
-            "lr_schedule":        "cosine_annealing",
-            "adam_beta1":         config.get("adam_beta1", 0.9),
-            "adam_beta2":         config.get("adam_beta2", 0.95),
-            "weight_decay":       config.get("weight_decay", 0.1),
+            "optimizer":        "Adam",
+            "learning_rate":    lr,
+            "lr_min":           config.get("lr_min", 1e-6),
+            "lr_schedule":      "cosine_annealing",
+            "adam_beta1":       config.get("adam_beta1", 0.9),
+            "adam_beta2":       config.get("adam_beta2", 0.95),
+            "weight_decay":     config.get("weight_decay", 0.1),
             # Data
-            "dataset":            "TinyStories",
-            "dataset_path":       TOKENIZED_PATH,
-            "tokenizer":          "gpt2",
-            "tokenizer_path":     TOKENIZER_PATH,
-            "train_sequences":    int(460_813 * (1 - VAL_SPLIT)),
-            "val_sequences":      int(460_813 * VAL_SPLIT),
-            "val_split":          VAL_SPLIT,
+            "dataset":          "TinyStories",
+            "dataset_path":     TOKENIZED_PATH,
+            "tokenizer":        "gpt2",
+            "tokenizer_path":   TOKENIZER_PATH,
+            "train_sequences":  int(460_813 * (1 - VAL_SPLIT)),
+            "val_sequences":    int(460_813 * VAL_SPLIT),
+            "val_split":        VAL_SPLIT,
             # Infrastructure
-            "fsdp_version":       "FSDP2",
-            "precision":          "fp32",
-            "checkpoint_every":   CKPT_EVERY,
-            "val_every":          VAL_EVERY,
-            "log_every":          LOG_EVERY,
-            "resumed":            is_resumed,
-            "resume_from_step":   global_step,
-        }
-        for k, v in params.items():
+            "fsdp_version":     "FSDP2",
+            "precision":        "fp32",
+            "checkpoint_every": CKPT_EVERY,
+            "log_every":        LOG_EVERY,
+            "resumed":          is_resumed,
+            "resume_from_step": global_step,
+        }.items():
             mlflow_client.log_param(mlflow_run_id, k, v)
 
-    # ── Profiler (fresh runs only — skipped on resume to avoid empty timeline) ─
+    # ── Profiler (fresh runs only) ────────────────────────────────────────────
+    # Skipped on resume: the profiler schedule (active=6 steps) would finish
+    # instantly with no data, crashing export_memory_timeline.
     if not is_resumed:
         prof_ctx = torch.profiler.profile(
             activities=[
@@ -422,7 +427,7 @@ def train_func(config):
             with_stack=True,
         )
     else:
-        logger.info("Skipping profiler on resumed run (would produce empty timeline).")
+        logger.info("Skipping profiler on resumed run.")
         prof_ctx = contextlib.nullcontext()
 
     # ── Training loop ─────────────────────────────────────────────────────────
@@ -436,10 +441,10 @@ def train_func(config):
 
             model.train()
 
-            # On resume: skip batches already completed in this epoch.
-            # global_step tells us how many steps were done total; since we
-            # reset batch_idx each run, we fast-forward through the DataLoader
-            # without doing any computation on already-trained batches.
+            # On resume: fast-forward through already-completed batches.
+            # global_step % total_batches = how many batches into this epoch
+            # were already done. We iterate the DataLoader without computing
+            # anything, then continue from the right position.
             batches_to_skip = global_step % total_batches if is_resumed else 0
             if batches_to_skip > 0:
                 logger.info(f"Skipping {batches_to_skip} already-completed batches...")
@@ -448,12 +453,11 @@ def train_func(config):
                     skipped += 1
                     if skipped >= batches_to_skip:
                         break
-                logger.info(f"Fast-forwarded {batches_to_skip} batches. Resuming from batch {batches_to_skip+1}.")
-                is_resumed = False  # only skip on first epoch of resume
+                logger.info(f"Fast-forwarded {batches_to_skip} batches. Resuming from batch {batches_to_skip + 1}.")
+                is_resumed = False  # only skip on the first epoch of a resume
 
             for batch_idx, input_ids in enumerate(train_loader):
-                # Adjust batch_idx to reflect true position in epoch
-                batch_idx = batch_idx + batches_to_skip
+                batch_idx = batch_idx + batches_to_skip  # true position in epoch
 
                 # Forward + backward
                 outputs = model(input_ids=input_ids, labels=input_ids)
@@ -470,7 +474,7 @@ def train_func(config):
                 n_batches    += 1
                 global_step  += 1
 
-                # Console log every 10 batches
+                # Console log every 10 steps
                 if global_step % 10 == 0:
                     vram = torch.cuda.memory_allocated() / 1024**3
                     logger.info(
@@ -483,25 +487,12 @@ def train_func(config):
 
                 # Log train metrics to MLflow every LOG_EVERY steps
                 if is_rank0 and mlflow_client and global_step % LOG_EVERY == 0:
-                    mlflow_client.log_metric(
-                        mlflow_run_id, "train_loss", loss.item(), step=global_step
-                    )
-                    mlflow_client.log_metric(
-                        mlflow_run_id, "train_loss_smooth",
-                        running_loss / n_batches, step=global_step
-                    )
-                    mlflow_client.log_metric(
-                        mlflow_run_id, "train_perplexity",
-                        math.exp(min(running_loss / n_batches, 20)), step=global_step
-                    )
-                    mlflow_client.log_metric(
-                        mlflow_run_id, "learning_rate",
-                        scheduler.get_last_lr()[0], step=global_step
-                    )
-                    mlflow_client.log_metric(
-                        mlflow_run_id, "epoch_progress",
-                        epoch + batch_idx / total_batches, step=global_step
-                    )
+                    smooth = running_loss / n_batches
+                    mlflow_client.log_metric(mlflow_run_id, "train_loss",        loss.item(),                    step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "train_loss_smooth",  smooth,                         step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "train_perplexity",   math.exp(min(smooth, 20)),       step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "learning_rate",      scheduler.get_last_lr()[0],     step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "epoch_progress",     epoch + batch_idx / total_batches, step=global_step)
 
                 # Validation + checkpoint every CKPT_EVERY steps
                 if global_step > 0 and global_step % CKPT_EVERY == 0:
@@ -529,8 +520,8 @@ def train_func(config):
                     )
 
             # End-of-epoch: full validation + checkpoint
-            val_metrics = run_validation(model, val_loader, device, max_batches=200)
-            avg_loss    = running_loss / n_batches
+            val_metrics   = run_validation(model, val_loader, device, max_batches=200)
+            avg_loss      = running_loss / n_batches
             epoch_metrics = {
                 "train_loss":       avg_loss,
                 "train_perplexity": math.exp(min(avg_loss, 20)),
@@ -579,7 +570,7 @@ def train_func(config):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Driver
+# Driver — runs on the head node only
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
@@ -589,9 +580,6 @@ if __name__ == "__main__":
         runtime_env={"env_vars": _NCCL_ENV},
     )
 
-    # ── MLflow: driver creates the run, workers only log to it ────────────────
-    # Driver owns the run lifecycle exclusively.
-    # Workers use MlflowClient(run_id=...) to log without opening/closing the run.
     mlflow_client_driver = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
 
     experiment = mlflow_client_driver.get_experiment_by_name(MLFLOW_EXPERIMENT)
@@ -602,61 +590,79 @@ if __name__ == "__main__":
         experiment_id = experiment.experiment_id
         logger.info(f"Using MLflow experiment: {MLFLOW_EXPERIMENT} (id={experiment_id})")
 
-    experiment_name = f"gpt2_scratch_tinystories_{uuid.uuid4().hex[:8]}"
-    run             = mlflow_client_driver.create_run(
-        experiment_id=experiment_id,
-        run_name=experiment_name,
-    )
-    mlflow_run_id = run.info.run_id
-
-    # Tags visible in MLflow UI
-    for k, v in {
-        "mlflow.source.name": __file__,
-        "ray.experiment":     experiment_name,
-        "cluster.head_ip":    "192.168.3.73",
-        "cluster.num_gpus":   "8",
-        "cluster.num_nodes":  "8",
-    }.items():
-        mlflow_client_driver.set_tag(mlflow_run_id, k, v)
-
-    print(f"MLflow run : {mlflow_run_id}")
-    print(f"MLflow UI  : {MLFLOW_TRACKING_URI}/#/experiments/{experiment_id}/runs/{mlflow_run_id}")
-    print()
-
     # ── Resume config ─────────────────────────────────────────────────────────
-    # Set RESUME_FROM_CHECKPOINT to a checkpoint directory path to resume,
-    # or leave as None for a fresh training run.
-    # RESUME_FROM_CHECKPOINT = None
-    RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
+    # Set RAY_EXPERIMENT_NAME to resume an existing training run.
+    # The script will automatically find the latest checkpoint in that folder.
+    # Set to None to start a completely fresh training run.
+    RAY_EXPERIMENT_NAME = "gpt2_scratch_tinystories_5c9636bf"
+    # RAY_EXPERIMENT_NAME = None   # ← uncomment for a fresh run
 
-    # Example:
-    # RESUME_FROM_CHECKPOINT = "/mnt/cluster_storage/gpt2_scratch_tinystories_5c9636bf/checkpoint_2026-05-18_17-36-45.725603"
+    # ── Auto-detect latest checkpoint ────────────────────────────────────────
+    # When RAY_EXPERIMENT_NAME is set, scan the storage folder and pick the
+    # most recent checkpoint automatically — no manual path needed.
+    RESUME_FROM_CHECKPOINT = None
+    experiment_name        = f"gpt2_scratch_tinystories_{uuid.uuid4().hex[:8]}"
 
-    # ── Reuse MLflow run on resume ────────────────────────────────────────────
-    # If resuming, read the mlflow_run_id saved in the checkpoint metadata
-    # and reactivate that run instead of creating a new one. This means all
-    # metrics from the resumed run appear in the same MLflow run as the original.
+    if RAY_EXPERIMENT_NAME:
+        storage_dir = f"/mnt/cluster_storage/{RAY_EXPERIMENT_NAME}"
+        if os.path.isdir(storage_dir):
+            # Find all checkpoint subdirectories (named checkpoint_YYYY-MM-DD_...)
+            checkpoints = sorted([
+                os.path.join(storage_dir, d)
+                for d in os.listdir(storage_dir)
+                if d.startswith("checkpoint_") and os.path.isdir(os.path.join(storage_dir, d))
+            ])
+            if checkpoints:
+                RESUME_FROM_CHECKPOINT = checkpoints[-1]   # latest = last alphabetically
+                experiment_name        = RAY_EXPERIMENT_NAME
+                logger.info(f"[Resume] Auto-detected latest checkpoint: {RESUME_FROM_CHECKPOINT}")
+            else:
+                logger.info(f"[Resume] No checkpoints found in {storage_dir} — fresh start")
+        else:
+            logger.info(f"[Resume] Storage dir not found: {storage_dir} — fresh start")
+
+    # ── MLflow run: reuse on resume, create new on fresh start ────────────────
+    # Check run_meta.json BEFORE creating any run — this ensures we never
+    # create a throwaway run that gets immediately abandoned on resume.
+    mlflow_run_id = None
+
     if RESUME_FROM_CHECKPOINT:
-        import json
-        meta_file = os.path.join(RESUME_FROM_CHECKPOINT, "..", "checkpoint_manager_snapshot.json")
-        meta_file = os.path.normpath(meta_file)
-        # Try to read mlflow_run_id from a small sidecar JSON we save alongside checkpoints
         run_meta_file = os.path.join(RESUME_FROM_CHECKPOINT, "run_meta.json")
         if os.path.exists(run_meta_file):
             with open(run_meta_file) as f:
                 run_meta = json.load(f)
             existing_run_id   = run_meta.get("mlflow_run_id")
-            existing_exp_name = run_meta.get("ray_experiment", experiment_name)
+            existing_exp_name = run_meta.get("ray_experiment")
             if existing_run_id:
-                # Reactivate the existing run (set it back to RUNNING)
                 mlflow_client_driver.update_run(existing_run_id, status="RUNNING")
                 mlflow_run_id   = existing_run_id
-                experiment_name = existing_exp_name
+                experiment_name = existing_exp_name or experiment_name
                 logger.info(f"[MLflow] Reactivated existing run: {mlflow_run_id}")
             else:
-                logger.info("[MLflow] No run_id in checkpoint metadata — creating new run")
+                logger.info("[MLflow] run_meta.json has no run_id — will create new run")
         else:
-            logger.info("[MLflow] No run_meta.json found — creating new run")
+            logger.info("[MLflow] No run_meta.json in checkpoint — will create new run")
+
+    # Only create a new run if we don't have one from the checkpoint
+    if mlflow_run_id is None:
+        run           = mlflow_client_driver.create_run(
+            experiment_id=experiment_id,
+            run_name=experiment_name,
+        )
+        mlflow_run_id = run.info.run_id
+        for k, v in {
+            "mlflow.source.name": __file__,
+            "ray.experiment":     experiment_name,
+            "cluster.head_ip":    "192.168.3.73",
+            "cluster.num_gpus":   "8",
+            "cluster.num_nodes":  "8",
+        }.items():
+            mlflow_client_driver.set_tag(mlflow_run_id, k, v)
+        logger.info(f"[MLflow] Created new run: {mlflow_run_id}")
+
+    print(f"MLflow run : {mlflow_run_id}")
+    print(f"MLflow UI  : {MLFLOW_TRACKING_URI}/#/experiments/{experiment_id}/runs/{mlflow_run_id}")
+    print()
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
@@ -668,9 +674,9 @@ if __name__ == "__main__":
         "adam_beta1":             0.9,
         "adam_beta2":             0.95,
         "weight_decay":           0.1,
-        "total_steps":            7056 * 1,    # update if changing epochs
+        "total_steps":            7056 * 1,   # update when changing epochs
         "mlflow_run_id":          mlflow_run_id,
-        "resume_checkpoint_path": RESUME_FROM_CHECKPOINT,  # None = fresh start
+        "resume_checkpoint_path": RESUME_FROM_CHECKPOINT,
     }
 
     scaling_config = ray.train.ScalingConfig(num_workers=8, use_gpu=True)
