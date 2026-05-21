@@ -20,6 +20,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset, random_split
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from datasets import load_from_disk
 
 from torch.distributed.fsdp import (
     fully_shard,
@@ -84,15 +85,37 @@ LLAMA_VOCAB_SIZE = 128256
 # Dataset
 # ══════════════════════════════════════════════════════════════════════════════
 
-class SyntheticTextDataset(Dataset):
-    """Synthetic token dataset for demonstration.
+WIKITEXT_PATH = "/mnt/cluster_storage/datasets/wikitext2"
 
-    Generates random token IDs in the model's vocabulary range.
-    Replace with a real dataset (e.g. ShareGPT, OpenHermes, custom JSONL)
-    for actual fine-tuning.
+
+class WikiTextDataset(Dataset):
+    """WikiText-2 dataset loaded from shared storage.
+
+    Concatenates all text into one long token stream, then chunks into
+    fixed-length sequences of seq_len tokens. This is the standard
+    "pack and chunk" approach for language model training — no padding,
+    no wasted tokens.
+
+    Expected path: /mnt/cluster_storage/datasets/wikitext2
+    Expected format: HuggingFace dataset with a "text" column.
     """
-    def __init__(self, vocab_size: int, seq_len: int, num_samples: int = 1000):
-        self.data = torch.randint(0, vocab_size, (num_samples, seq_len))
+    def __init__(self, tokenizer, seq_len: int, split: str = "train"):
+        logger.info(f"Loading WikiText-2 ({split}) from {WIKITEXT_PATH} ...")
+        dataset = load_from_disk(WIKITEXT_PATH)[split]
+
+        # Concatenate all non-empty lines into one long string then tokenize
+        text   = " ".join([x for x in dataset["text"] if x.strip()])
+        tokens = tokenizer.encode(text)
+
+        # Chunk into fixed-length sequences — drop last partial chunk
+        self.data = []
+        for i in range(0, len(tokens) - seq_len, seq_len):
+            self.data.append(torch.tensor(tokens[i:i + seq_len]))
+
+        logger.info(
+            f"WikiText-2 {split}: {len(tokens):,} tokens → "
+            f"{len(self.data):,} sequences of length {seq_len}"
+        )
 
     def __len__(self):
         return len(self.data)
@@ -101,21 +124,19 @@ class SyntheticTextDataset(Dataset):
         return self.data[idx]
 
 
-def build_dataloaders(batch_size: int, seq_len: int, num_samples: int = 1000):
-    """Build train/val DataLoaders with a deterministic split."""
-    full_dataset = SyntheticTextDataset(LLAMA_VOCAB_SIZE, seq_len, num_samples)
-    n_val        = max(1, int(len(full_dataset) * VAL_SPLIT))
-    n_train      = len(full_dataset) - n_val
+def build_dataloaders(tokenizer, batch_size: int, seq_len: int):
+    """Build train and validation DataLoaders from WikiText-2.
 
-    train_data, val_data = random_split(
-        full_dataset,
-        [n_train, n_val],
-        generator=torch.Generator().manual_seed(42),
-    )
-    logger.info(f"Dataset split — train: {n_train} | val: {n_val} samples")
+    Uses the dataset's own train/validation/test splits instead of
+    a random split — this gives comparable results to published benchmarks.
+    """
+    train_dataset = WikiTextDataset(tokenizer, seq_len, split="train")
+    val_dataset   = WikiTextDataset(tokenizer, seq_len, split="validation")
 
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True,  drop_last=True)
-    val_loader   = DataLoader(val_data,   batch_size=batch_size, shuffle=False, drop_last=True)
+    logger.info(f"Train: {len(train_dataset):,} sequences | Val: {len(val_dataset):,} sequences")
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  drop_last=True)
+    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False, drop_last=True)
     return train_loader, val_loader
 
 
@@ -352,7 +373,6 @@ def train_func(config):
     batch_size    = config.get("batch_size", 1)
     lr            = config.get("learning_rate", 1e-5)
     seq_len       = config.get("seq_len", SEQ_LEN)
-    num_samples   = config.get("num_samples", 1000)
     cpu_offload   = config.get("cpu_offload", True)
     mlflow_run_id = config.get("mlflow_run_id")
     resume_path   = config.get("resume_checkpoint_path")
@@ -362,6 +382,12 @@ def train_func(config):
     if is_rank0 and mlflow_run_id:
         mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
         logger.info(f"[MLflow] Client ready — run {mlflow_run_id}")
+
+    # ── Tokenizer ─────────────────────────────────────────────────────────────
+    # Load tokenizer on all workers — needed to build WikiText dataset
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     # ── Model + FSDP ──────────────────────────────────────────────────────────
     model  = init_model()
@@ -396,7 +422,7 @@ def train_func(config):
         logger.info(f"[MLflow] Resuming into run: {mlflow_run_id}")
 
     # ── Dataset ───────────────────────────────────────────────────────────────
-    train_loader, val_loader = build_dataloaders(batch_size, seq_len, num_samples)
+    train_loader, val_loader = build_dataloaders(tokenizer, batch_size, seq_len)
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
     val_loader   = ray.train.torch.prepare_data_loader(val_loader)
     total_batches = len(train_loader)
@@ -429,7 +455,6 @@ def train_func(config):
             "world_size":         world_size,
             "effective_batch":    batch_size * world_size,
             "tokens_per_step":    batch_size * world_size * seq_len,
-            "num_samples":        num_samples,
             # Optimizer
             "optimizer":          "AdamW",
             "learning_rate":      lr,
@@ -447,7 +472,10 @@ def train_func(config):
             "checkpoint_every":   CKPT_EVERY,
             "log_every":          LOG_EVERY,
             "val_split":          VAL_SPLIT,
-            "dataset":            "synthetic (replace with real dataset)",
+            "dataset":            "WikiText-2",
+            "dataset_path":       WIKITEXT_PATH,
+            "dataset_split":      "train/validation (HF splits)",
+            "tokenizer":          "LLaMA-3.1-8B-Instruct tokenizer",
         }.items():
             mlflow_client.log_param(mlflow_run_id, k, v)
 
@@ -721,7 +749,6 @@ if __name__ == "__main__":
         "lr_min":                 1e-7,
         "batch_size":             1,        # 1 per GPU — LLaMA 8B + seq_len=512 fits ~20GB
         "seq_len":                SEQ_LEN,
-        "num_samples":            1000,     # replace with real dataset size
         "cpu_offload":            True,     # set False if GPU has >40GB VRAM
         "adam_beta1":             0.9,
         "adam_beta2":             0.95,
