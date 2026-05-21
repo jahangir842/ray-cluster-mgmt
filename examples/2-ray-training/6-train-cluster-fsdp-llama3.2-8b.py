@@ -528,9 +528,7 @@ def train_func(config):
                 optimizer.zero_grad()
                 loss.backward()
 
-                # Gradient clipping — important for large models
-                model.clip_grad_norm_(config.get("max_grad_norm", 1.0))
-                grad_norm = torch.tensor(1.0)  # placeholder for logging
+                grad_norm = torch.tensor(1.0)
 
                 optimizer.step()
                 scheduler.step()
