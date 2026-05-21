@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 # ── Paths & constants ─────────────────────────────────────────────────────────
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
-SEQ_LEN    = 128
+SEQ_LEN    = 256
 VAL_SPLIT  = 0.05    # 5% held out for validation
 LOG_EVERY  = 2      # log train_loss to MLflow every N steps
 CKPT_EVERY = 50      # checkpoint + validation every N steps
@@ -111,7 +111,7 @@ class WikiTextDataset(Dataset):
         for i in range(0, len(tokens) - seq_len, seq_len):
             self.data.append(torch.tensor(tokens[i:i + seq_len]))
 
-        self.data = self.data[:100] 
+        # self.data = self.data[:100] 
 
         logger.info(
             f"WikiText-2 {split}: {len(tokens):,} tokens → "
@@ -741,7 +741,7 @@ if __name__ == "__main__":
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
-        "epochs":                 1,
+        "epochs":                 2,
         "learning_rate":          1e-5,
         "lr_min":                 1e-7,
         "batch_size":             1,        # 1 per GPU — LLaMA 8B + seq_len=512 fits ~20GB
