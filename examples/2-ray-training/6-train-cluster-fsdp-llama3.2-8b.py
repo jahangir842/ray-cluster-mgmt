@@ -72,9 +72,9 @@ logger = logging.getLogger(__name__)
 
 # ── Paths & constants ─────────────────────────────────────────────────────────
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
-SEQ_LEN    = 512
+SEQ_LEN    = 128
 VAL_SPLIT  = 0.05    # 5% held out for validation
-LOG_EVERY  = 10      # log train_loss to MLflow every N steps
+LOG_EVERY  = 2      # log train_loss to MLflow every N steps
 CKPT_EVERY = 50      # checkpoint + validation every N steps
 
 # LLaMA 3.1 vocab size
@@ -108,7 +108,7 @@ class WikiTextDataset(Dataset):
         tokens = tokenizer.encode(text)
 
         # Chunk into fixed-length sequences — drop last partial chunk
-        self.data = []
+        self.data = self.data[:100]
         for i in range(0, len(tokens) - seq_len, seq_len):
             self.data.append(torch.tensor(tokens[i:i + seq_len]))
 
@@ -157,7 +157,7 @@ def init_model() -> torch.nn.Module:
     logger.info(f"Loading LLaMA-3.1-8B-Instruct from {MODEL_PATH} ...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_PATH,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,
         local_files_only=True,
     )
     total_params     = sum(p.numel() for p in model.parameters())
@@ -186,8 +186,8 @@ def shard_model(model: torch.nn.Module, cpu_offload: bool = True):
 
     offload_policy = CPUOffloadPolicy() if cpu_offload else None
     mp_policy      = MixedPrecisionPolicy(
-        param_dtype=torch.float16,
-        reduce_dtype=torch.float16,
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
     )
 
     for block in model.model.layers:
@@ -740,12 +740,12 @@ if __name__ == "__main__":
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
-        "epochs":                 2,
+        "epochs":                 1,
         "learning_rate":          1e-5,
         "lr_min":                 1e-7,
         "batch_size":             1,        # 1 per GPU — LLaMA 8B + seq_len=512 fits ~20GB
         "seq_len":                SEQ_LEN,
-        "cpu_offload":            True,     # set False if GPU has >40GB VRAM
+        "cpu_offload":            False,     # set False if GPU has >40GB VRAM
         "adam_beta1":             0.9,
         "adam_beta2":             0.95,
         "weight_decay":           0.1,
