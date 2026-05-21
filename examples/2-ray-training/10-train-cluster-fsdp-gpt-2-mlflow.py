@@ -692,3 +692,4 @@ if __name__ == "__main__":
     with torch.no_grad():
         output = model.generate(**inputs, max_new_tokens=100)
     print(tokenizer.decode(output[0], skip_special_tokens=True))
+    
