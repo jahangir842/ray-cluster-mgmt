@@ -320,9 +320,6 @@ def train_func(config):
     resume_path   = config.get("resume_checkpoint_path")
 
     # ── MLflow client (rank 0 only) ───────────────────────────────────────────
-    # Always use MlflowClient directly — never `with mlflow.start_run()`.
-    # Context managers close the run when the with-block exits, which marks
-    # it "Finished" immediately. Client API logs without touching lifecycle.
     mlflow_client = None
     if is_rank0 and mlflow_run_id:
         mlflow_client = mlflow.tracking.MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
@@ -350,8 +347,6 @@ def train_func(config):
     if resume_path:
         start_epoch, global_step = load_checkpoint(model, optimizer, scheduler, resume_path)
         is_resumed = True
-        # mlflow_run_id is already correct — it was read from run_meta.json
-        # by the driver and passed here via train_loop_config
         logger.info(f"[MLflow] Resuming into run: {mlflow_run_id}")
 
     # ── Dataset ───────────────────────────────────────────────────────────────
@@ -369,7 +364,6 @@ def train_func(config):
     # ── Log hyperparams to MLflow (rank 0 only) ───────────────────────────────
     if is_rank0 and mlflow_client:
         for k, v in {
-            # Architecture
             "model":            "gpt2-124M-scratch",
             "n_layer":          12,
             "n_head":           12,
@@ -379,14 +373,12 @@ def train_func(config):
             "resid_pdrop":      0.1,
             "attn_pdrop":       0.1,
             "embd_pdrop":       0.1,
-            # Training
             "epochs":           epochs,
             "batch_size":       batch_size,
             "seq_len":          seq_len,
             "world_size":       world_size,
             "effective_batch":  batch_size * world_size,
             "tokens_per_step":  batch_size * world_size * seq_len,
-            # Optimizer
             "optimizer":        "Adam",
             "learning_rate":    lr,
             "lr_min":           config.get("lr_min", 1e-6),
@@ -394,7 +386,6 @@ def train_func(config):
             "adam_beta1":       config.get("adam_beta1", 0.9),
             "adam_beta2":       config.get("adam_beta2", 0.95),
             "weight_decay":     config.get("weight_decay", 0.1),
-            # Data
             "dataset":          "TinyStories",
             "dataset_path":     TOKENIZED_PATH,
             "tokenizer":        "gpt2",
@@ -402,7 +393,6 @@ def train_func(config):
             "train_sequences":  int(460_813 * (1 - VAL_SPLIT)),
             "val_sequences":    int(460_813 * VAL_SPLIT),
             "val_split":        VAL_SPLIT,
-            # Infrastructure
             "fsdp_version":     "FSDP2",
             "precision":        "fp32",
             "checkpoint_every": CKPT_EVERY,
@@ -413,8 +403,6 @@ def train_func(config):
             mlflow_client.log_param(mlflow_run_id, k, v)
 
     # ── Profiler (fresh runs only) ────────────────────────────────────────────
-    # Skipped on resume: the profiler schedule (active=6 steps) would finish
-    # instantly with no data, crashing export_memory_timeline.
     if not is_resumed:
         prof_ctx = torch.profiler.profile(
             activities=[
@@ -441,23 +429,18 @@ def train_func(config):
 
             model.train()
 
-            # On resume: fast-forward through already-completed batches.
-            # global_step % total_batches = how many batches into this epoch
-            # were already done. We iterate the DataLoader without computing
-            # anything, then continue from the right position.
+            # On resume: calculate how many batches into the epoch we already completed
             batches_to_skip = global_step % total_batches if is_resumed else 0
+            
             if batches_to_skip > 0:
-                logger.info(f"Skipping {batches_to_skip} already-completed batches...")
-                skipped = 0
-                for _ in train_loader:
-                    skipped += 1
-                    if skipped >= batches_to_skip:
-                        break
-                logger.info(f"Fast-forwarded {batches_to_skip} batches. Resuming from batch {batches_to_skip + 1}.")
-                is_resumed = False  # only skip on the first epoch of a resume
+                logger.info(f"Fast-forwarding: Skipping first {batches_to_skip} batches...")
+                is_resumed = False  # Reset so we don't skip on subsequent epochs
 
             for batch_idx, input_ids in enumerate(train_loader):
-                batch_idx = batch_idx + batches_to_skip  # true position in epoch
+                
+                # ── THE FIX: Skip the already processed batches here ──
+                if batch_idx < batches_to_skip:
+                    continue
 
                 # Forward + backward
                 outputs = model(input_ids=input_ids, labels=input_ids)
@@ -488,11 +471,11 @@ def train_func(config):
                 # Log train metrics to MLflow every LOG_EVERY steps
                 if is_rank0 and mlflow_client and global_step % LOG_EVERY == 0:
                     smooth = running_loss / n_batches
-                    mlflow_client.log_metric(mlflow_run_id, "train_loss",        loss.item(),                    step=global_step)
-                    mlflow_client.log_metric(mlflow_run_id, "train_loss_smooth",  smooth,                         step=global_step)
-                    mlflow_client.log_metric(mlflow_run_id, "train_perplexity",   math.exp(min(smooth, 20)),       step=global_step)
-                    mlflow_client.log_metric(mlflow_run_id, "learning_rate",      scheduler.get_last_lr()[0],     step=global_step)
-                    mlflow_client.log_metric(mlflow_run_id, "epoch_progress",     epoch + batch_idx / total_batches, step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "train_loss",        loss.item(),                 step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "train_loss_smooth", smooth,                      step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "train_perplexity",  math.exp(min(smooth, 20)),   step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "learning_rate",     scheduler.get_last_lr()[0],  step=global_step)
+                    mlflow_client.log_metric(mlflow_run_id, "epoch_progress",    epoch + batch_idx / total_batches, step=global_step)
 
                 # Validation + checkpoint every CKPT_EVERY steps
                 if global_step > 0 and global_step % CKPT_EVERY == 0:
@@ -591,22 +574,16 @@ if __name__ == "__main__":
         logger.info(f"Using MLflow experiment: {MLFLOW_EXPERIMENT} (id={experiment_id})")
 
     # ── Resume config ─────────────────────────────────────────────────────────
-    # Set RAY_EXPERIMENT_NAME to resume an existing training run.
-    # The script will automatically find the latest checkpoint in that folder.
-    # Set to None to start a completely fresh training run.
     RAY_EXPERIMENT_NAME = "gpt2_scratch_tinystories_5c9636bf"
     # RAY_EXPERIMENT_NAME = None   # ← uncomment for a fresh run
 
     # ── Auto-detect latest checkpoint ────────────────────────────────────────
-    # When RAY_EXPERIMENT_NAME is set, scan the storage folder and pick the
-    # most recent checkpoint automatically — no manual path needed.
     RESUME_FROM_CHECKPOINT = None
     experiment_name        = f"gpt2_scratch_tinystories_{uuid.uuid4().hex[:8]}"
 
     if RAY_EXPERIMENT_NAME:
         storage_dir = f"/mnt/cluster_storage/{RAY_EXPERIMENT_NAME}"
         if os.path.isdir(storage_dir):
-            # Find all checkpoint subdirectories (named checkpoint_YYYY-MM-DD_...)
             checkpoints = sorted([
                 os.path.join(storage_dir, d)
                 for d in os.listdir(storage_dir)
@@ -622,8 +599,6 @@ if __name__ == "__main__":
             logger.info(f"[Resume] Storage dir not found: {storage_dir} — fresh start")
 
     # ── MLflow run: reuse on resume, create new on fresh start ────────────────
-    # Check run_meta.json BEFORE creating any run — this ensures we never
-    # create a throwaway run that gets immediately abandoned on resume.
     mlflow_run_id = None
 
     if RESUME_FROM_CHECKPOINT:
@@ -643,7 +618,6 @@ if __name__ == "__main__":
         else:
             logger.info("[MLflow] No run_meta.json in checkpoint — will create new run")
 
-    # Only create a new run if we don't have one from the checkpoint
     if mlflow_run_id is None:
         run           = mlflow_client_driver.create_run(
             experiment_id=experiment_id,
