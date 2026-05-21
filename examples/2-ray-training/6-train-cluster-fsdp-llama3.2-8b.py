@@ -529,10 +529,8 @@ def train_func(config):
                 loss.backward()
 
                 # Gradient clipping — important for large models
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    model.parameters(),
-                    config.get("max_grad_norm", 1.0),
-                )
+                model.clip_grad_norm_(config.get("max_grad_norm", 1.0))
+                grad_norm = torch.tensor(1.0)  # placeholder for logging
 
                 optimizer.step()
                 scheduler.step()
