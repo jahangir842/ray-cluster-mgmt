@@ -107,10 +107,11 @@ class WikiTextDataset(Dataset):
         text   = " ".join([x for x in dataset["text"] if x.strip()])
         tokens = tokenizer.encode(text)
 
-        # Chunk into fixed-length sequences — drop last partial chunk
-        self.data = self.data[:100]
+        self.data = []
         for i in range(0, len(tokens) - seq_len, seq_len):
             self.data.append(torch.tensor(tokens[i:i + seq_len]))
+
+        self.data = self.data[:100] 
 
         logger.info(
             f"WikiText-2 {split}: {len(tokens):,} tokens → "
