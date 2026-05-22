@@ -667,8 +667,8 @@ if __name__ == "__main__":
 
     # ── Resume config ─────────────────────────────────────────────────────────
     # Set to the Ray experiment name to resume, or None for a fresh run.
-    RAY_EXPERIMENT_NAME = None
-    # RAY_EXPERIMENT_NAME = "llama31_8b_fsdp_abc12345"
+    # RAY_EXPERIMENT_NAME = None
+    RAY_EXPERIMENT_NAME = "llama31_8b_fsdp_4bac0716"
 
     # ── Auto-detect latest valid checkpoint ───────────────────────────────────
     RESUME_FROM_CHECKPOINT = None
