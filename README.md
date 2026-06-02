@@ -20,14 +20,6 @@ Welcome to the **Ray Cluster Management**! This repository contains everything y
 
 [**Ray**](https://ray.io/) is an open-source, distributed computing framework that makes it simple to scale Python and AI workloads from a single machine to a cluster of thousands of nodes. Whether you're running machine learning training, hyperparameter tuning, or distributed data processing, Ray handles the complex aspects of distributed computing—task scheduling, object storage, fault tolerance, and communication—transparently.
 
-### Key Characteristics
-
-- **Unified API:** Write code once, then run it locally or on a cluster without modification.
-- **Low Latency:** Microsecond-level task dispatch and sub-millisecond object transfers via in-memory storage (the Ray object store).
-- **Fault Tolerant:** Automatic recovery from node failures with lineage-based recovery.
-- **Language Agnostic:** Native support for Python; additional support for Java, C++, and other languages via extensions.
-- **Multi-Tenant Ready:** Share a single Ray cluster across multiple teams/applications with resource isolation.
-
 ### The Ray Ecosystem
 
 Ray provides a suite of **high-level libraries** built on top of its core distributed execution engine:
@@ -38,13 +30,6 @@ Ray provides a suite of **high-level libraries** built on top of its core distri
 - **Ray Serve:** Model serving and online inference with autoscaling.
 - **Ray Data:** Distributed data loading and preprocessing at scale.
 - **Ray AIR (AI Runtime):** An end-to-end ML platform combining Train, Tune, and Serve.
-
----
-
-### Cost Efficiency
-- Run only when needed and auto-scale down during idle periods.
-- Share a single cluster across multiple teams/projects.
-- Use spot instances (cloud) or on-premise hardware efficiently.
 
 ---
 
