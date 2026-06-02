@@ -7,12 +7,10 @@ Welcome to the **Ray Cluster Management**! This repository contains everything y
 ## Table of Contents
 
 1. [Introduction to Ray](#introduction-to-ray)
-2. [Core Uses of Ray](#core-uses-of-ray)
-3. [Why Deploy Ray?](#why-deploy-ray)
-4. [Deployment Methods](#deployment-methods)
-5. [Repository Structure](#repository-structure)
-6. [Quick Start](#quick-start)
-7. [Prerequisites](#prerequisites)
+2. [Deployment Methods](#deployment-methods)
+3. [Repository Structure](#repository-structure)
+4. [Quick Start](#quick-start)
+5. [Prerequisites](#prerequisites)
 
 ---
 
