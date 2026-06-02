@@ -26,9 +26,10 @@ This guide covers deploying an MLflow tracking server on the Ray head node, back
 
 ## Option 1: Automated Script (Recommended)
 
-Run the startup script from the repo root on the head node:
+Run the startup script from the `installation/04-mlflow/` directory on the head node:
 
 ```bash
+cd installation/04-mlflow
 chmod +x start_mlflow_server.sh
 ./start_mlflow_server.sh
 ```

@@ -62,12 +62,13 @@ ray-cluster-mgmt/
 ├── developers-guide.md                 # Developer notes and workflow
 ├── requirements.txt                    # Python dependencies
 ├── mlflow-command.txt                  # MLflow server reference commands
-├── start_mlflow_server.sh              # MLflow server startup script
 ├── installation/                       # Cluster deployment methods
 │   ├── 01-manual-cli/                  # Manual SSH-based multi-node deployment
 │   ├── 02-docker-compose/              # Multi-node simulation with Docker
 │   ├── 03-kuberay/                     # Production deployment on Kubernetes
 │   └── 04-mlflow/                      # MLflow tracking server setup
+│       ├── README.md
+│       └── start_mlflow_server.sh      # MLflow server startup script
 └── examples/                           # Example workloads by Ray library
     ├── 1-ray-core/                     # Raw @ray.remote tasks (stateless parallelism)
     │   ├── matrix-multiplcation/
