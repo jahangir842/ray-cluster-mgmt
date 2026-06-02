@@ -82,6 +82,17 @@ We'll:
 
 ---
 
+# Check link speed on all nodes
+
+```bash
+for ip in 192.168.3.71 192.168.3.72 192.168.3.73 192.168.3.74 192.168.3.75 192.168.3.76 192.168.3.77 192.168.3.78; do
+    echo -n "$ip: "
+    ssh user@$ip "ethtool enp0s31f6 2>/dev/null | grep Speed || ethtool eno1 2>/dev/null | grep Speed || echo 'check interface name'"
+done
+```
+
+---
+
 ## Step 1: Prepare Node Machine (Head or Worker)
 
 This step will be applied to all nodes including Head node and all worker nodes.
