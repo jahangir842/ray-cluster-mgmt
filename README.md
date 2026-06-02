@@ -35,7 +35,7 @@ Ray provides a suite of **high-level libraries** built on top of its core distri
 
 This workshop covers **three production-ready deployment strategies**, each suited for different environments:
 
-| **Method** | **Environment** | **Complexity** | **Best For** | **Folder** |
+| **Method** | **Environment** | **Complexity** | **Best For** | **Detailed Guide** |
 |:--|:--|:--|:--|:--|
 | **Manual CLI** | Systemwise | ⭐ Low | Learning, local testing, small fixed clusters | [01-manual-cli](installation/01-manual-cli/README.md) |
 | **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | [02-docker-compose](installation/02-docker-compose/README.md) |
