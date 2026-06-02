@@ -41,6 +41,7 @@ This workshop covers **three production-ready deployment strategies**, each suit
 | **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | [02-docker-compose](installation/02-docker-compose/README.md) |
 | **KubeRay** | Kubernetes Cluster | ⭐⭐⭐ High | Production, auto-scaling, cloud-native environments | [03-kuberay](installation/03-kuberay/README.md) |
 | **MLflow** | Head Node (shared storage) | ⭐ Low | Experiment tracking and artifact storage for all nodes | [04-mlflow](installation/04-mlflow/README.md) |
+| **Shared Storage** | All Nodes (NFS) | ⭐ Low | `/mnt/cluster_storage` mounted on every node for checkpoints and artifacts | [05-shared-storage](installation/05-shared-storage/README.md) |
 
 ### Quick Comparison Table
 
@@ -66,9 +67,11 @@ ray-cluster-mgmt/
 │   ├── 01-manual-cli/                  # Manual SSH-based multi-node deployment
 │   ├── 02-docker-compose/              # Multi-node simulation with Docker
 │   ├── 03-kuberay/                     # Production deployment on Kubernetes
-│   └── 04-mlflow/                      # MLflow tracking server setup
-│       ├── README.md
-│       └── start_mlflow_server.sh      # MLflow server startup script
+│   ├── 04-mlflow/                      # MLflow tracking server setup
+│   │   ├── README.md
+│   │   └── start_mlflow_server.sh      # MLflow server startup script
+│   └── 05-shared-storage/              # NFS shared storage setup for all nodes
+│       └── README.md
 └── examples/                           # Example workloads by Ray library
     ├── 1-ray-core/                     # Raw @ray.remote tasks (stateless parallelism)
     │   ├── matrix-multiplcation/

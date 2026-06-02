@@ -38,6 +38,12 @@ We'll:
 - Port availability: `6379` (Ray client), `8265` (Dashboard), `10001` (GCS server)
 - Python 3.8+ (or will be installed)
 
+### Shared Storage (Required for Training and MLflow)
+
+Ray Train checkpoints and MLflow artifacts are written to `/mnt/cluster_storage/`, which must be an NFS share visible on all nodes before running training workloads.
+
+Set it up first: [05-shared-storage/README.md](../05-shared-storage/README.md)
+
 ---
 
 ## Your Ray Cluster Architecture
