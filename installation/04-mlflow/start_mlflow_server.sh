@@ -94,13 +94,14 @@ TRACKING_URI="http://${HEAD_IP}:${MLFLOW_PORT}"
 #                      browsers on any LAN machine can call the REST API
 #                      (required for delete/rename actions in the UI)
 log "Starting MLflow server..."
-MLFLOW_FLASK_SERVER_CORS_ORIGINS="*" \
 nohup mlflow server \
     --backend-store-uri     "${MLFLOW_DB}"          \
     --default-artifact-root "${MLFLOW_ARTIFACTS}"   \
     --host                  "${MLFLOW_HOST}"         \
     --port                  "${MLFLOW_PORT}"         \
     --serve-artifacts                                \
+    --cors-allowed-origins  "*"                      \
+    --allowed-hosts         "*"                      \
     > "${MLFLOW_LOG}" 2>&1 &
 
 SERVER_PID=$!
