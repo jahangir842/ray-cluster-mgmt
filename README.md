@@ -37,9 +37,9 @@ This workshop covers **three production-ready deployment strategies**, each suit
 
 | **Method** | **Environment** | **Complexity** | **Best For** | **Folder** |
 |:--|:--|:--|:--|:--|
-| **Manual CLI** | Systemwise | ⭐ Low | Learning, local testing, small fixed clusters | 01-manual-cli/README.md](01-manual-cli/README.md) |
-| **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | `02-docker-compose` |
-| **KubeRay** | Kubernetes Cluster | ⭐⭐⭐ High | Production, auto-scaling, cloud-native environments | `03-kuberay` |
+| **Manual CLI** | Systemwise | ⭐ Low | Learning, local testing, small fixed clusters | [01-manual-cli/README.md](01-manual-cli/README.md) |
+| **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | [02-docker-compose/README.md](02-docker-compose/README.md) |
+| **KubeRay** | Kubernetes Cluster | ⭐⭐⭐ High | Production, auto-scaling, cloud-native environments | [03-kuberay/README.md](03-kuberay/README.md) |
 
 ### Quick Comparison Table
 
