@@ -82,6 +82,13 @@ We'll:
 
 ---
 
+# Check link speed Network
+
+```bash
+ethtool enp0s31f6
+ethtool eno1
+```
+
 # Check link speed on all nodes
 
 ```bash
@@ -95,7 +102,7 @@ done
 
 ## Step 1: Prepare Node Machine (Head or Worker)
 
-This step will be applied to all nodes including Head node and all worker nodes.
+This step will be applied to all nodes, including the head node and all worker nodes.
 
 **SSH Connection:** SSH into your head node:
 
