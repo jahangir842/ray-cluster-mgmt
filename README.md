@@ -1,6 +1,6 @@
-# Ray Cluster Deployment Workshop
+# Ray Cluster Management
 
-Welcome to the **Ray Cluster Deployment Workshop**! This repository contains everything you need to deploy a Ray cluster from scratch—from local development to production-grade Kubernetes deployments. Clone this repo to any machine and follow the step-by-step guides to get a fully functional Ray cluster running.
+Welcome to the **Ray Cluster Management**! This repository contains everything you need to deploy a Ray cluster from scratch—from local development to production-grade Kubernetes deployments. Clone this repo to any machine and follow the step-by-step guides to get a fully functional Ray cluster running.
 
 ---
 
