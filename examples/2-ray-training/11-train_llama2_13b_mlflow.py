@@ -71,7 +71,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Paths & constants ─────────────────────────────────────────────────────────
-MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/Llama-2-13b"
+MODEL_PATH = "/mnt/cluster_storage/models/Llama-2-13b"
 SEQ_LEN    = 512
 VAL_SPLIT  = 0.05    # 5% held out for validation
 LOG_EVERY  = 10      # log train_loss to MLflow every N steps
