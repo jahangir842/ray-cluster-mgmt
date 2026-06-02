@@ -40,6 +40,7 @@ This workshop covers **three production-ready deployment strategies**, each suit
 | **Manual CLI** | Systemwise | ⭐ Low | Learning, local testing, small fixed clusters | [01-manual-cli](installation/01-manual-cli/README.md) |
 | **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | [02-docker-compose](installation/02-docker-compose/README.md) |
 | **KubeRay** | Kubernetes Cluster | ⭐⭐⭐ High | Production, auto-scaling, cloud-native environments | [03-kuberay](installation/03-kuberay/README.md) |
+| **MLflow** | Head Node (shared storage) | ⭐ Low | Experiment tracking and artifact storage for all nodes | [04-mlflow](installation/04-mlflow/README.md) |
 
 ### Quick Comparison Table
 
@@ -58,18 +59,23 @@ This workshop covers **three production-ready deployment strategies**, each suit
 ```
 ray-cluster-mgmt/
 ├── README.md                           # This file
-├── 01-manual-cli/                      # Manual SSH-based multi-node deployment
-│   ├── README.md                       # Step-by-step setup instructions with condensed reference guide
-│   └── example-job.py                  # Sample distributed Ray job
-├── 02-docker-compose/                  # Multi-node simulation with Docker
-│   ├── README.md                       # Docker setup instructions  
-│   ├── docker-compose.yml              # Multi-container cluster definition (1 head + 2 workers)
-│   ├── Dockerfile                      # Ray environment image
-│   └── example-job.py                  # Sample Ray job for containers
-└── 03-kuberay/                         # Production deployment on Kubernetes
-    ├── README.md                       # KubeRay setup instructions
-    ├── ray-cluster.yaml                # Ray cluster Custom Resource Definition
-    └── sample-job.yaml                 # Example Kubernetes Job
+├── developers-guide.md                 # Developer notes and workflow
+├── requirements.txt                    # Python dependencies
+├── mlflow-command.txt                  # MLflow server reference commands
+├── start_mlflow_server.sh              # MLflow server startup script
+├── installation/                       # Cluster deployment methods
+│   ├── 01-manual-cli/                  # Manual SSH-based multi-node deployment
+│   ├── 02-docker-compose/              # Multi-node simulation with Docker
+│   ├── 03-kuberay/                     # Production deployment on Kubernetes
+│   └── 04-mlflow/                      # MLflow tracking server setup
+└── examples/                           # Example workloads by Ray library
+    ├── 1-ray-core/                     # Raw @ray.remote tasks (stateless parallelism)
+    │   ├── matrix-multiplcation/
+    │   └── squre-root/
+    ├── 2-ray-training/                 # Distributed PyTorch training with Ray Train
+    ├── 3-RL-lib/                       # Reinforcement learning with Ray RLlib
+    ├── 4-ray-serve(LLM)/               # LLM serving with Ray Serve
+    └── 5-ray-tune/                     # Hyperparameter search with Ray Tune
 ```
 
 ---
