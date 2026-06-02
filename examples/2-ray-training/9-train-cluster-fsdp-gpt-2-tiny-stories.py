@@ -105,7 +105,6 @@ def init_model() -> torch.nn.Module:
     logger.info(f"Blank GPT-2 initialized — {total_params:,} parameters")
     return model
 
-
 # ── FSDP2 Sharding ────────────────────────────────────────────────────────────
 
 def shard_model(model: torch.nn.Module):
