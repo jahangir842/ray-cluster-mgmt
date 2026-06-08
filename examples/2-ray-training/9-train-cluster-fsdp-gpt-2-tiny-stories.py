@@ -14,7 +14,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     MixedPrecisionPolicy,

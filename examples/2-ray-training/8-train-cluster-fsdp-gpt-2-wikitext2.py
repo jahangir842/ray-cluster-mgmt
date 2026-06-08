@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader, Dataset
 # Easily fits on a single GPU — used here purely to demonstrate FSDP2 mechanics.
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     MixedPrecisionPolicy,

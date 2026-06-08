@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_from_disk
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     CPUOffloadPolicy,

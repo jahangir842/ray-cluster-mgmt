@@ -19,7 +19,7 @@ from torchvision.models import vit_h_14, ViT_H_14_Weights, vit_l_32, ViT_L_32_We
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     CPUOffloadPolicy,

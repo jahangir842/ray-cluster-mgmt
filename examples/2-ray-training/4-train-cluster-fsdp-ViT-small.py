@@ -18,7 +18,7 @@ from torchvision.models import VisionTransformer
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor, Normalize, Compose
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     CPUOffloadPolicy,

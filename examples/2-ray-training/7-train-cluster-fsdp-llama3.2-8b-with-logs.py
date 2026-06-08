@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Dataset
 # Single 24GB GPU cannot train this. Requires FSDP2 across multiple GPUs.
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from torch.distributed.fsdp import (
+from torch.distributed._composable.fsdp import (
     fully_shard,
     FSDPModule,
     MixedPrecisionPolicy,
