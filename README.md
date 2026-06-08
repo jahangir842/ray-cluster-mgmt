@@ -79,8 +79,32 @@ ray-cluster-mgmt/
     ├── 2-ray-training/                 # Distributed PyTorch training with Ray Train
     ├── 3-RL-lib/                       # Reinforcement learning with Ray RLlib
     ├── 4-ray-serve(LLM)/               # LLM serving with Ray Serve
-    └── 5-ray-tune/                     # Hyperparameter search with Ray Tune
+    ├── 5-ray-tune/                     # Hyperparameter search with Ray Tune
+    └── 6.vllm-with-ray-backend/        # vLLM pipeline-parallel serving across nodes
 ```
+
+---
+
+## Examples
+
+The `examples/` directory contains ready-to-run workloads organized by Ray library:
+
+| # | Folder | What it covers |
+|:--|:--|:--|
+| 1 | `1-ray-core/` | Stateless parallelism with `@ray.remote` — matrix multiplication, square root across the cluster |
+| 2 | `2-ray-training/` | Distributed PyTorch training with `ray.train.torch.TorchTrainer`; checkpoints to `/mnt/cluster_storage/` |
+| 3 | `3-RL-lib/` | Reinforcement learning experiments with Ray RLlib (PPO) |
+| 4 | `4-ray-serve(LLM)/` | LLM serving with native Ray Serve (no vLLM) |
+| 5 | `5-ray-tune/` | Hyperparameter search using Ray Tune with Optuna backend |
+| 6 | `6.vllm-with-ray-backend/` | vLLM pipeline-parallel inference spread across multiple GPU nodes using Ray as the distributed executor |
+
+### Example 6 — vLLM with Ray Backend
+
+Serves a large language model (Llama 3.1-8B) across **6 GPUs on multiple nodes** using vLLM's pipeline parallelism mode with Ray as the executor backend. See [`examples/6.vllm-with-ray-backend/1.setup-guide.md`](examples/6.vllm-with-ray-backend/1.setup-guide.md) for the full setup guide, including:
+
+- Per-node NIC configuration (`enp0s31f6` on RTX 4500 nodes, `eno1` on RTX 3090 nodes)
+- Why `GLOO_SOCKET_IFNAME` must be set in the Ray worker process environment (not just the vllm launch shell)
+- How to free GPUs and ports before re-launching
 
 ---
 
