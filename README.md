@@ -100,7 +100,7 @@ The `examples/` directory contains ready-to-run workloads organized by Ray libra
 
 ### Example 6 — vLLM with Ray Backend
 
-Serves a large language model (Llama 3.1-8B) across **6 GPUs on multiple nodes** using vLLM's pipeline parallelism mode with Ray as the executor backend. See [`examples/6.vllm-with-ray-backend/1.setup-guide.md`](examples/6.vllm-with-ray-backend/1.setup-guide.md) for the full setup guide, including:
+Serves a large language model (Llama 3.1-8B) across **8 GPUs on multiple nodes** using vLLM's pipeline parallelism mode with Ray as the executor backend. See [`examples/6.vllm-with-ray-backend/1.setup-guide.md`](examples/6.vllm-with-ray-backend/1.setup-guide.md) for the full setup guide, including:
 
 - Per-node NIC configuration (`enp0s31f6` on RTX 4500 nodes, `eno1` on RTX 3090 nodes)
 - Why `GLOO_SOCKET_IFNAME` must be set in the Ray worker process environment (not just the vllm launch shell)
