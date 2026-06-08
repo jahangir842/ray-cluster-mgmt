@@ -168,11 +168,18 @@ python -c "import ray; print(ray.__version__)"
 ssh user@<Node IP>
 ```
 
-Start Ray:
+Set environment variables, then start Ray:
 
 ```bash
 # Ensure conda environment is activated
 conda activate ray-env
+
+# Set network interface for Gloo/NCCL (must be set before ray start)
+# RTX 4500 nodes (pc1-pc5): enp0s31f6
+# RTX 3090 nodes (pc6-pc8): eno1
+export GLOO_SOCKET_IFNAME=enp0s31f6   # use this node's physical interface
+export NCCL_SOCKET_IFNAME=enp0s31f6
+export NCCL_IB_DISABLE=1
 
 # Start the head node
 ray start --head --port=6379 --dashboard-host=0.0.0.0
@@ -218,11 +225,24 @@ ssh user@WORKER_NODE_IP
 
 ## Step 4: Connect Worker Nodes to Head Node
 
-On **each worker node**, connect to the head:
+On **each worker node**, set the interface env vars and then connect to the head.
+
+> **Important:** `GLOO_SOCKET_IFNAME` must be set in the **same shell** that runs
+> `ray start`. The Ray worker process inherits env vars at startup and keeps them
+> for its lifetime. If you change `.bashrc` later, restart the worker for it to
+> take effect. Without this, Gloo auto-detects and may pick a Docker bridge
+> (172.x.x.x) that is unreachable from other nodes.
 
 ```bash
 # Ensure conda environment is activated on the worker
 conda activate ray-env
+
+# Set network interface for this node (must match the node's physical NIC)
+# RTX 4500 nodes (pc1-pc5, 192.168.3.71-75): enp0s31f6
+# RTX 3090 nodes (pc6-pc8, 192.168.3.76-78): eno1
+export GLOO_SOCKET_IFNAME=enp0s31f6   # adjust to this node's interface
+export NCCL_SOCKET_IFNAME=enp0s31f6
+export NCCL_IB_DISABLE=1
 
 # Connect to head node (192.168.3.73)
 ray start --address='192.168.3.73:6379'
@@ -431,30 +451,6 @@ ray start --address='192.168.3.73:6379' \
 ---
 
 ## Troubleshooting Multi-Node Setup
-```
-
-Then connect to the head node:
-
-```bash
-# Connect to head node (192.168.3.73)
-ray start --address='192.168.3.73:6379'
-```
-
-### Verify the Multi-Node Cluster
-
-On the head node, check all connected nodes:
-
-```bash
-ray status
-```
-
-Expected output with 2 worker nodes:
-```
-======== Cluster Stats ========
-Node Count: 3
-Total Available Resources: {'CPU': 12.0, 'memory': 12000000000.0}
-...
-```
 
 ---
 
