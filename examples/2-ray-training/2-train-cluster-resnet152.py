@@ -12,8 +12,11 @@ from torchvision.transforms import ToTensor, Normalize, Compose
 import ray.train.torch
 
 def train_func():
+    # Pin this worker to its assigned GPU before any CUDA/cuDNN ops.
+    # Without this, cuDNN lazy-init can fail after NCCL claims the device first.
+    torch.cuda.set_device(ray.train.get_context().get_local_rank())
+
     # Model, Loss, Optimizer
-    # model = resnet18(num_classes=10)
     model = resnet152(num_classes=10)
     model.conv1 = torch.nn.Conv2d(
         1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
@@ -33,12 +36,15 @@ def train_func():
     # [2] Prepare dataloader
     train_loader = ray.train.torch.prepare_data_loader(train_loader)
 
+    device = torch.device("cuda", ray.train.get_context().get_local_rank())
+
     # Training (Reduced to 2 epochs)
     for epoch in range(2):
         if ray.train.get_context().get_world_size() > 1:
             train_loader.sampler.set_epoch(epoch)
 
         for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             loss = criterion(outputs, labels)
             optimizer.zero_grad()
@@ -65,7 +71,7 @@ if __name__ == "__main__":
     )
 
     # [4] Configure scaling 
-    scaling_config = ray.train.ScalingConfig(num_workers=7, use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(num_workers=6, use_gpu=True)
 
     # [5] Launch distributed training job
     trainer = ray.train.torch.TorchTrainer(
