@@ -757,7 +757,7 @@ if __name__ == "__main__":
         "resume_checkpoint_path": RESUME_FROM_CHECKPOINT,
     }
 
-    scaling_config = ray.train.ScalingConfig(num_workers=8, use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(num_workers=5, use_gpu=True)
 
     run_config = ray.train.RunConfig(
         storage_path="/mnt/cluster_storage/",
