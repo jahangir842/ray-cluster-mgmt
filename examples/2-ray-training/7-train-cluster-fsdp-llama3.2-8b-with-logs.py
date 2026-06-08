@@ -104,7 +104,7 @@ def init_model() -> torch.nn.Module:
     logger.info(f"Initializing LLaMA-3.1-8B-Instruct from {MODEL_PATH} ...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_PATH,
-        dtype=torch.float16,      # fp16: 16 GB RAM per node vs 32 GB for fp32
+        torch_dtype=torch.float16,  # fp16: 16 GB RAM per node vs 32 GB for fp32
         local_files_only=True,    # never hit the internet — use local copy
     )
     return model
