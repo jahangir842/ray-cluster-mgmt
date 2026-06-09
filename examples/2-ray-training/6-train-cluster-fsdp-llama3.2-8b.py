@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 # ── Paths & constants ─────────────────────────────────────────────────────────
 MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
-SEQ_LEN    = 256
+SEQ_LEN    = 128
 VAL_SPLIT  = 0.05    # 5% held out for validation
 LOG_EVERY  = 2      # log train_loss to MLflow every N steps
 CKPT_EVERY = 50      # checkpoint + validation every N steps
@@ -757,7 +757,7 @@ if __name__ == "__main__":
         "resume_checkpoint_path": RESUME_FROM_CHECKPOINT,
     }
 
-    scaling_config = ray.train.ScalingConfig(num_workers=5, use_gpu=True)
+    scaling_config = ray.train.ScalingConfig(num_workers=8, use_gpu=True)
 
     run_config = ray.train.RunConfig(
         storage_path="/mnt/cluster_storage/",

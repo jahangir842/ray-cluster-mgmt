@@ -44,6 +44,25 @@ Ray Train checkpoints and MLflow artifacts are written to `/mnt/cluster_storage/
 
 Set it up first: [05-shared-storage/README.md](../05-shared-storage/README.md)
 
+Ensure that the share storage is available
+
+```bash
+sudo mount -a
+ls /mnt/cluster_storage
+```
+
+---
+
+### Start MLFlow Server:
+
+Run the startup script from the `installation/04-mlflow/` directory on the head node:
+
+```bash
+cd installation/04-mlflow
+chmod +x start_mlflow_server.sh
+./start_mlflow_server.sh
+```
+
 ---
 
 ## Your Ray Cluster Architecture
