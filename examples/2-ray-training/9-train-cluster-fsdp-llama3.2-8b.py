@@ -93,11 +93,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Paths & constants ─────────────────────────────────────────────────────────
-MODEL_PATH = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
-SEQ_LEN    = 128
-VAL_SPLIT  = 0.05    # 5% held out for validation
-LOG_EVERY  = 2      # log train_loss to MLflow every N steps
-CKPT_EVERY = 50      # checkpoint + validation every N steps
+MODEL_PATH   = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
+SEQ_LEN      = 128
+VAL_SPLIT    = 0.05    # 5% held out for validation
+LOG_EVERY    = 2       # log train_loss to MLflow every N steps
+CKPT_EVERY   = 50      # checkpoint + validation every N steps
+ENABLE_PROFILER = False  # set True only when debugging GPU kernel performance
 
 # LLaMA 3.1 vocab size
 LLAMA_VOCAB_SIZE = 128256
@@ -508,8 +509,8 @@ def train_func(config):
         }.items():
             mlflow_client.log_param(mlflow_run_id, k, v)
 
-    # ── Profiler (fresh runs only) ────────────────────────────────────────────
-    if not is_resumed:
+    # ── Profiler — opt-in only (ENABLE_PROFILER = True) ──────────────────────
+    if ENABLE_PROFILER and not is_resumed:
         prof_ctx = torch.profiler.profile(
             activities=[
                 torch.profiler.ProfilerActivity.CPU,
@@ -521,7 +522,6 @@ def train_func(config):
             with_stack=True,
         )
     else:
-        logger.info("Skipping profiler on resumed run.")
         prof_ctx = contextlib.nullcontext()
 
     # ── Training loop ─────────────────────────────────────────────────────────
@@ -647,7 +647,7 @@ def train_func(config):
     profile_dir = f"/mnt/cluster_storage/{run_name}"
     os.makedirs(profile_dir, exist_ok=True)
 
-    if not is_resumed and prof is not None:
+    if ENABLE_PROFILER and not is_resumed and prof is not None:
         profile_path = f"{profile_dir}/rank{world_rank}_memory_profile.html"
         try:
             prof.export_memory_timeline(profile_path)
