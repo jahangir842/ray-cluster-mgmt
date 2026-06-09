@@ -57,20 +57,26 @@ _NCCL_ENV = {
 }
 os.environ.update(_NCCL_ENV)
 
-# Cluster nodes use either enp0s31f6 or eno1 depending on hardware generation.
-# NCCL/Gloo comma-separated format is broken on this cluster's library versions.
-_CANDIDATE_IFACES = ("enp0s31f6", "eno1")
+_CLUSTER_SUBNET = "192.168.3."   # all cluster nodes live on this prefix
 
 def _detect_ifname() -> str:
-    """Return the first candidate interface that exists on this node."""
+    """Return the interface that carries the cluster IP (192.168.3.x).
+
+    `ip link show <name>` only tells us the device exists, not whether it has
+    an IP.  Some nodes have enp0s31f6 present but unaddressed; the live NIC
+    may be eno1, eth0, or another name.  Matching by IP is authoritative.
+    """
     import subprocess
-    for iface in _CANDIDATE_IFACES:
-        try:
-            subprocess.check_output(["ip", "link", "show", iface], stderr=subprocess.DEVNULL)
-            return iface
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-    logger.warning("None of %s found — falling back to eth0", _CANDIDATE_IFACES)
+    result = subprocess.run(
+        ["ip", "-o", "-4", "addr", "show"],
+        capture_output=True, text=True,
+    )
+    for line in result.stdout.splitlines():
+        # format: "2: enp0s31f6    inet 192.168.3.72/24 brd ..."
+        parts = line.split()
+        if len(parts) >= 4 and parts[3].startswith(_CLUSTER_SUBNET):
+            return parts[1]
+    logger.warning("No interface with %s* found — falling back to eth0", _CLUSTER_SUBNET)
     return "eth0"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
