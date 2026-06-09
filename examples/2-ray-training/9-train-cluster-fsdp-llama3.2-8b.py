@@ -48,14 +48,30 @@ MLFLOW_EXPERIMENT   = "llama31-8b-fsdp"
 
 # ── Cluster env — broadcast to all workers via Ray runtime_env ────────────────
 _NCCL_ENV = {
-    "NCCL_SOCKET_IFNAME":      "enp0s31f6,eno1",
-    "GLOO_SOCKET_IFNAME":      "enp0s31f6,eno1",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
     "RAY_DEDUP_LOGS":          "0",
     "MLFLOW_TRACKING_URI":     MLFLOW_TRACKING_URI,
     "HF_HOME":                 "/mnt/cluster_storage/.cache/huggingface",
+    "NCCL_IB_DISABLE":         "1",   # no InfiniBand on this cluster
+    "NCCL_DEBUG":              "WARN",
 }
 os.environ.update(_NCCL_ENV)
+
+# Cluster nodes use either enp0s31f6 or eno1 depending on hardware generation.
+# NCCL/Gloo comma-separated format is broken on this cluster's library versions.
+_CANDIDATE_IFACES = ("enp0s31f6", "eno1")
+
+def _detect_ifname() -> str:
+    """Return the first candidate interface that exists on this node."""
+    import subprocess
+    for iface in _CANDIDATE_IFACES:
+        try:
+            subprocess.check_output(["ip", "link", "show", iface], stderr=subprocess.DEVNULL)
+            return iface
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+    logger.warning("None of %s found — falling back to eth0", _CANDIDATE_IFACES)
+    return "eth0"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_FILE = "/tmp/llama_training.log"
@@ -369,6 +385,12 @@ def train_func(config):
     world_rank = ctx.get_world_rank()
     world_size = ctx.get_world_size()
     is_rank0   = (world_rank == 0)
+
+    # Set per-node NIC — must happen before any NCCL/Gloo collective
+    ifname = _detect_ifname()
+    os.environ["NCCL_SOCKET_IFNAME"] = ifname
+    os.environ["GLOO_SOCKET_IFNAME"] = ifname
+    logger.info(f"[Rank {world_rank}] Using network interface: {ifname}")
 
     epochs        = config.get("epochs", 2)
     batch_size    = config.get("batch_size", 1)
