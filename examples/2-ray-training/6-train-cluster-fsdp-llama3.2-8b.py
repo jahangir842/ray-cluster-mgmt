@@ -741,7 +741,7 @@ if __name__ == "__main__":
 
     # ── Training config ───────────────────────────────────────────────────────
     train_loop_config = {
-        "epochs":                 2,
+        "epochs":                 1,
         "learning_rate":          1e-5,
         "lr_min":                 1e-7,
         "batch_size":             1,        # 1 per GPU — LLaMA 8B + seq_len=512 fits ~20GB
