@@ -761,7 +761,7 @@ if __name__ == "__main__":
 
     run_config = ray.train.RunConfig(
         storage_path="/mnt/cluster_storage/",
-        name=experiment_name,
+        name=experiment_name, 
         failure_config=ray.train.FailureConfig(max_failures=1),
     )
 
