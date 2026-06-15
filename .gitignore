@@ -61,3 +61,8 @@ Thumbs.db
 *.tmp
 *.temp
 .tmp/
+
+# Monitoring (Prometheus / Grafana)
+monitoring/.env
+monitoring/prometheus/data/
+monitoring/grafana/data/

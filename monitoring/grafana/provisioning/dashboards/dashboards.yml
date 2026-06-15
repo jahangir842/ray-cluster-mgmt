@@ -1,0 +1,26 @@
+apiVersion: 1
+
+providers:
+  # Ray auto-generates its Grafana dashboards (cluster, serve, train, data,
+  # etc.) into this directory when the head node starts. Grafana watches the
+  # folder and picks up new/updated dashboards automatically.
+  - name: "Ray default dashboards"
+    folder: "Ray"
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /tmp/ray/session_latest/metrics/grafana/dashboards
+      foldersFromFilesStructure: false
+
+  # Drop any of your own dashboard JSON files into ./grafana/dashboards/.
+  - name: "Custom dashboards"
+    folder: "Custom"
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/custom

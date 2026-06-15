@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: ray-cluster-mgmt
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Ray cluster — every Ray node runs a metrics agent. The Ray head writes a
+  # Prometheus service-discovery file listing all of them, so we never have to
+  # hard-code node IPs/ports. The /tmp/ray dir is mounted into this container.
+  #
+  # Requires the head to be started with a stable metrics port, e.g.:
+  #   ray start --head --metrics-export-port=8080
+  # ---------------------------------------------------------------------------
+  - job_name: "ray"
+    file_sd_configs:
+      - files:
+          - "/tmp/ray/prom_metrics_service_discovery.json"
+
+  # Prometheus self-monitoring.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Host-level metrics from node_exporter (this node).
+  - job_name: "node_exporter"
+    static_configs:
+      - targets: ["node_exporter:9100"]
+        labels:
+          instance: "ray-head"
+
+  # ---------------------------------------------------------------------------
+  # Optional: scrape node_exporter on every other cluster node. Deploy
+  # node_exporter on each host and uncomment / extend the targets below.
+  # ---------------------------------------------------------------------------
+  # - job_name: "cluster_node_exporters"
+  #   static_configs:
+  #     - targets:
+  #         - "192.168.3.73:9100"
+  #         - "192.168.3.74:9100"
+  #         - "192.168.3.75:9100"

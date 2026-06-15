@@ -1,0 +1,16 @@
+apiVersion: 1
+
+# Ray's auto-generated dashboards reference a Prometheus datasource by the
+# fixed UID "rayPromDS" (see RAY_PROMETHEUS_NAME). Pinning the UID here makes
+# those dashboards work out of the box.
+datasources:
+  - name: Prometheus
+    uid: rayPromDS
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
