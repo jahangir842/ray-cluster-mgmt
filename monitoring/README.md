@@ -77,9 +77,9 @@ time-per-output-token, running vs. waiting requests, and KV-cache usage.
 - **Scrape job**: the `vllm` job in `prometheus/prometheus.yml` targets
   `192.168.3.73:8000`. Add more `targets` there if you run several instances.
 - **Dashboard**: the official vLLM dashboard ships in
-  `grafana/provisioning/dashboards/custom/vllm.json` (patched to use this stack's Prometheus
-  datasource). It appears in Grafana's **Custom** folder as "vLLM"; use the
-  `model_name` dropdown to pick the served model.
+  `grafana/provisioning/dashboards/vllm/vllm.json` (patched to use this stack's
+  Prometheus datasource). It loads into its own **vLLM** folder in Grafana; use
+  the `model_name` dropdown to pick the served model.
 
 If you run `vllm serve` on a different host/port, update the `vllm` target and
 reload Prometheus (`curl -X POST http://localhost:9090/-/reload`).
@@ -106,9 +106,10 @@ monitoring/
     └── provisioning/
         ├── datasources/datasource.yml     # Prometheus datasource (uid rayPromDS)
         └── dashboards/
-            ├── dashboards.yml             # loads Ray + custom dashboards
-            └── custom/
-                └── vllm.json             # official vLLM dashboard (datasource pinned)
+            ├── dashboards.yml             # loads Ray + vLLM + custom dashboards
+            ├── vllm/
+            │   └── vllm.json             # official vLLM dashboard (datasource pinned)
+            └── custom/                    # drop your own dashboard JSON here
 ```
 
 ## Troubleshooting

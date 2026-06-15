@@ -15,7 +15,18 @@ providers:
       path: /tmp/ray/session_latest/metrics/grafana/dashboards
       foldersFromFilesStructure: false
 
-  # Drop any of your own dashboard JSON files into ./grafana/dashboards/.
+  # Dedicated folder for the vLLM serving dashboard (metrics from vLLM's own
+  # /metrics endpoint, scraped by the "vllm" Prometheus job).
+  - name: "vLLM dashboards"
+    folder: "vLLM"
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/vllm
+
+  # Drop any of your own dashboard JSON files into ./grafana/provisioning/dashboards/custom/.
   - name: "Custom dashboards"
     folder: "Custom"
     type: file
