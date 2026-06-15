@@ -1260,7 +1260,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "edx8memhpd9tsa"
+            "uid": "rayPromDS"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -1360,7 +1360,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "edx8memhpd9tsa"
+            "uid": "rayPromDS"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -1473,7 +1473,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "edx8memhpd9tsa"
+            "uid": "rayPromDS"
           },
           "disableTextWrap": false,
           "editorMode": "code",
@@ -1499,12 +1499,12 @@
       {
         "current": {
           "selected": false,
-          "text": "/share/datasets/public_models/Meta-Llama-3-8B-Instruct",
-          "value": "/share/datasets/public_models/Meta-Llama-3-8B-Instruct"
+          "text": "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct",
+          "value": "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "edx8memhpd9tsa"
+          "uid": "rayPromDS"
         },
         "definition": "label_values(model_name)",
         "hide": 0,
