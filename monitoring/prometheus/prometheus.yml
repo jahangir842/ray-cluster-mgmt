@@ -18,6 +18,21 @@ scrape_configs:
       - files:
           - "/tmp/ray/prom_metrics_service_discovery.json"
 
+  # ---------------------------------------------------------------------------
+  # vLLM OpenAI API server — exposes Prometheus metrics at /metrics on its
+  # serving port (default 8000). Metrics include request throughput, latency
+  # (TTFT / TPOT), running vs. waiting requests, and KV-cache usage.
+  #
+  # Set the target to the host running `vllm serve`. Add more targets here if
+  # you run additional vLLM instances.
+  # ---------------------------------------------------------------------------
+  - job_name: "vllm"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.3.73:8000"]
+        labels:
+          model: "llama-3.1-8b-instruct"
+
   # Prometheus self-monitoring.
   - job_name: "prometheus"
     static_configs:
