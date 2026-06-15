@@ -68,6 +68,22 @@ ray start --head --metrics-export-port=8080 --dashboard-host=0.0.0.0
 
 `RAY_GRAFANA_IFRAME_HOST` must be the URL your **browser** uses to reach Grafana.
 
+## vLLM monitoring
+
+vLLM's OpenAI API server exposes Prometheus metrics at `/metrics` on its serving
+port (`:8000`) — request throughput, end-to-end latency, time-to-first-token,
+time-per-output-token, running vs. waiting requests, and KV-cache usage.
+
+- **Scrape job**: the `vllm` job in `prometheus/prometheus.yml` targets
+  `192.168.3.73:8000`. Add more `targets` there if you run several instances.
+- **Dashboard**: the official vLLM dashboard ships in
+  `grafana/provisioning/dashboards/vllm/vllm.json` (patched to use this stack's
+  Prometheus datasource). It loads into its own **vLLM** folder in Grafana; use
+  the `model_name` dropdown to pick the served model.
+
+If you run `vllm serve` on a different host/port, update the `vllm` target and
+reload Prometheus (`curl -X POST http://localhost:9090/-/reload`).
+
 ## Monitoring other cluster nodes' hosts
 
 The included `node_exporter` only covers the head node. For full host metrics,
@@ -90,7 +106,9 @@ monitoring/
     └── provisioning/
         ├── datasources/datasource.yml     # Prometheus datasource (uid rayPromDS)
         └── dashboards/
-            ├── dashboards.yml             # loads Ray + custom dashboards
+            ├── dashboards.yml             # loads Ray + vLLM + custom dashboards
+            ├── vllm/
+            │   └── vllm.json             # official vLLM dashboard (datasource pinned)
             └── custom/                    # drop your own dashboard JSON here
 ```
 
