@@ -153,7 +153,7 @@ def simulate_user(user_id, start_time):
                 "model": MODEL_ID,
                 "messages": [{"role": "user", "content": message}],
                 "temperature": 0.7,
-                "max_tokens": 1024,
+                "max_tokens": 1024,  # keep prompt+completion <= server --max-model-len (1024)
                 "stream": True
             }
             
