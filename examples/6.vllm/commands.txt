@@ -1,0 +1,32 @@
+curl -N -X POST 'http://192.168.3.73:8000/v1/completions' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct",
+  "prompt": "The capital of France is",
+  "max_tokens": 20,
+  "temperature": 0,
+  "stream": true
+}'
+
+
+
+
+
+
+
+
+
+
+
+
+curl -X POST 'http://192.168.3.73:8000/v1/chat/completions' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"}
+  ],
+  "max_tokens": 20,
+  "temperature": 0
+}'
