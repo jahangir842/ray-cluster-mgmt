@@ -19,7 +19,7 @@ BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 MODEL_ID = "/home/user/projects/vllm-deployment/vllm/models/3.1-8b-instruct"
 
 
-NUM_USERS = 50
+NUM_USERS = 350
 TEST_DURATION = 300  # 5 minutes
 MESSAGES_PER_USER = 10
 DELAY_BETWEEN_MESSAGES = (3, 8)  # Random seconds between messages
