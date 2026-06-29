@@ -31,7 +31,7 @@ scrape_configs:
     static_configs:
       - targets: ["192.168.3.73:8000"]
         labels:
-          model: "llama-3.1-8b-instruct"
+          model: "deepseek-r1-70b"
 
   # Prometheus self-monitoring.
   - job_name: "prometheus"
