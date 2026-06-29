@@ -1,77 +1,90 @@
-version: '3.9'
+# Single-host mode: head + N workers in a bridge network.
+# Good for local dev, CI, and demos on one machine.
+#
+# Usage:
+#   cp .env.example .env && vim .env
+#   docker compose build
+#   docker compose up -d
+#   docker compose up -d --scale ray-worker=5   # scale workers at runtime
+#   docker compose exec ray-head ray status
+
+name: ray-cluster
 
 services:
-  # Ray Head Node
+
+  # ── Head Node ──────────────────────────────────────────────────────────────
   ray-head:
     build:
       context: .
-      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311}
     container_name: ray-head
     hostname: ray-head
     ports:
-      - "6379:6379"      # Ray client port
-      - "8265:8265"      # Ray dashboard
-      - "10001:10001"    # Ray GCS server port
+      - "${RAY_GCS_PORT:-6379}:6379"
+      - "${RAY_DASHBOARD_PORT:-8265}:8265"
+      - "${RAY_CLIENT_PORT:-10001}:10001"
     environment:
-      - RAY_DASHBOARD_PORT=8265
-      - RAY_memory=3000000000       # 3GB object store
-      - RAY_object_store_memory=1000000000  # 1GB
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-eth0}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-eth0}
     volumes:
-      - ./:/app
-      - /tmp/ray:/tmp/ray
+      - ../../examples:/app/examples:ro
+      - ray-tmp:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/tmp/cluster_storage}:/mnt/cluster_storage
     networks:
-      - ray-network
+      - ray-net
     command: >
-      bash -c "
-      ray start --head 
-        --port=6379 
-        --dashboard-port=8265 
-        --num-cpus=4 
-        --object-store-memory=1000000000 &&
-      sleep infinity
-      "
+      ray start --head
+        --port=6379
+        --dashboard-port=8265
+        --num-cpus=${HEAD_NUM_CPUS:-4}
+        --object-store-memory=${HEAD_OBJECT_STORE_MEMORY:-4000000000}
+        --block
     healthcheck:
       test: ["CMD", "ray", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      interval: 15s
+      timeout: 10s
+      retries: 5
       start_period: 30s
     restart: unless-stopped
 
-  # Ray Worker Nodes
+  # ── Worker Nodes ───────────────────────────────────────────────────────────
   ray-worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311}
     depends_on:
       ray-head:
         condition: service_healthy
     environment:
-      - RAY_memory=3000000000
-      - RAY_object_store_memory=1000000000
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-eth0}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-eth0}
     volumes:
-      - ./:/app
-      - /tmp/ray:/tmp/ray
+      - ../../examples:/app/examples:ro
+      - ray-tmp:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/tmp/cluster_storage}:/mnt/cluster_storage
     networks:
-      - ray-network
+      - ray-net
     command: >
-      bash -c "
-      ray start 
-        --address=ray-head:6379 
-        --num-cpus=2 
-        --object-store-memory=1000000000 &&
-      sleep infinity
-      "
+      ray start
+        --address=ray-head:6379
+        --num-cpus=${WORKER_NUM_CPUS:-4}
+        --object-store-memory=${WORKER_OBJECT_STORE_MEMORY:-4000000000}
+        --block
     healthcheck:
       test: ["CMD", "ray", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      interval: 15s
+      timeout: 10s
+      retries: 5
       start_period: 30s
     restart: unless-stopped
     deploy:
-      replicas: 2  # Number of worker nodes (can be scaled with: docker-compose up -d --scale ray-worker=N)
+      replicas: ${WORKER_REPLICAS:-2}
 
 networks:
-  ray-network:
+  ray-net:
     driver: bridge
+
+volumes:
+  ray-tmp:

@@ -1,0 +1,48 @@
+# Multi-node mode — WORKER node only.
+# Run this file on each physical worker machine.
+#
+# Uses host networking + NVIDIA runtime so Ray can see all GPUs directly.
+# Set RAY_HEAD_HOST in .env to the head node's IP before running.
+#
+# Usage (on each worker node):
+#   cp .env.example .env && vim .env   # set RAY_HEAD_HOST, WORKER_NUM_GPUS, etc.
+#   docker compose -f docker-compose.worker.yml build
+#   docker compose -f docker-compose.worker.yml up -d
+#   docker compose -f docker-compose.worker.yml logs -f
+
+name: ray-worker
+
+services:
+
+  ray-worker:
+    build:
+      context: .
+      args:
+        # Use the GPU image on worker nodes that have NVIDIA GPUs
+        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311-gpu}
+    container_name: ray-worker
+    network_mode: host
+    environment:
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-enp0s31f6,eno1}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-enp0s31f6,eno1}
+      # Make all host GPUs visible inside the container
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - /tmp/ray:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/mnt/cluster_storage}:/mnt/cluster_storage
+    command: >
+      ray start
+        --address=${RAY_HEAD_HOST:-192.168.3.73}:${RAY_GCS_PORT:-6379}
+        --num-cpus=${WORKER_NUM_CPUS:-32}
+        --num-gpus=${WORKER_NUM_GPUS:-1}
+        --object-store-memory=${WORKER_OBJECT_STORE_MEMORY:-8000000000}
+        --block
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped

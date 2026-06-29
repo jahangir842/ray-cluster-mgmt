@@ -1,452 +1,206 @@
-# Ray Cluster with Docker Compose
+# Ray Cluster — Docker Compose (IaC)
 
-This guide shows how to deploy a multi-node Ray cluster using Docker Compose—perfect for local development, testing, and demo environments.
+Parameterized Docker Compose setup for Ray clusters. Supports two modes:
 
-## Overview
+| Mode | File | Use case |
+|------|------|----------|
+| **Single-host** | `docker-compose.yml` | Local dev, CI, workshops on one machine |
+| **Multi-node head** | `docker-compose.head.yml` | Run on the physical head node (192.168.3.73) |
+| **Multi-node worker** | `docker-compose.worker.yml` | Run on each physical worker node |
 
-Docker Compose lets you simulate a multi-node Ray cluster on a single machine using containers:
-- **Head Node:** Central Ray coordinator
-- **Worker Nodes:** Multiple worker containers connected to the head
-- **Networking:** Automatic communication via Docker bridge network
-- **Isolation:** Clean, reproducible environments
-
-**When to use this method:**
-- Local development and testing
-- Demos and workshops
-- CI/CD pipelines
-- Cross-platform consistency (Windows, macOS, Linux)
-- Avoiding dependency conflicts with `ray start`
-
-## Prerequisites
-
-- **Docker:** 20.10+ (install from [docker.com](https://www.docker.com/))
-- **Docker Compose:** 1.29+ (often included with Docker Desktop)
-- **4GB RAM** minimum (8GB+ recommended)
-- **Disk Space:** 5GB for images and containers
-
-### Verify Installation
-
-```bash
-docker --version
-docker-compose --version
-```
-
-## Quick Start (3 minutes)
-
-Execute these commands in order to bring up a 3-node Ray cluster:
-
-```bash
-# Step 1: Navigate to this directory
-cd 02-docker-compose
-
-# Step 2: Build the Docker image (one-time only)
-docker-compose build
-```
-
-This creates a Docker image named `ray:latest` with:
-- Python 3.9
-- Ray[default] and common ML libraries
-- A startup script that will be run when the container starts
-
-```bash
-# Step 3: Start the cluster (1 head + 2 workers)
-docker-compose up -d
-```
-
-The `-d` flag runs in background. The `up` command will:
-- Create and start the head container
-- Wait for head to be healthy
-- Create and start 2 worker containers
-- Auto-connect workers to head
-
-```bash
-# Step 4: Check status
-docker-compose logs -f ray-head
-```
-
-You should see output like:
-```
-ray-head | Started Ray with:
-ray-head |   Dashboard available at 127.0.0.1:8265
-```
-
-```bash
-# Step 5: View cluster info (in another terminal)
-docker-compose exec ray-head ray status
-```
-
-Output:
-```
-======== Cluster Stats ========
-Node Count: 3
-Object Store Memory: 3.00 Gb
-...
-```
-
-```bash
-# Step 6: Run an example job
-docker-compose exec ray-head python /app/example-job.py
-```
-
-You should see tasks executing on different worker nodes.
-
-```bash
-# Step 7: Stop the cluster when done
-docker-compose down
-```
+All tunables live in `.env` — no editing YAML files.
 
 ---
+
+## File Structure
 
 ```
 02-docker-compose/
-├── README.md                  # This file
-├── docker-compose.yml         # Multi-container cluster definition
-├── Dockerfile                 # Ray environment image
-├── example-job.py             # Sample Ray job
-└── .env                       # Environment variables (optional)
+├── .env.example                # Config template (committed)
+├── .env                        # Your values (git-ignored)
+├── Dockerfile                  # Parameterized Ray image (CPU or GPU via BASE_IMAGE)
+├── docker-compose.yml          # Single-host: head + N workers
+├── docker-compose.head.yml     # Multi-node: head only, host networking
+├── docker-compose.worker.yml   # Multi-node: worker only, host networking + GPU
+├── Makefile                    # Convenience targets (make help)
+├── scripts/
+│   └── deploy-cluster.sh       # SSH-based deploy to all 8 nodes
+└── example-job.py              # Smoke-test job
 ```
-
-## Understanding the docker-compose.yml File
-
-Before running Docker Compose, let's understand what's in the configuration file:
-
-```yaml
-version: '3.9'
-
-services:
-  ray-head:
-    # Build from Dockerfile
-    build:
-      context: .
-      dockerfile: Dockerfile
-    
-    # Container name for reference
-    container_name: ray-head
-    
-    # Expose ports to host machine
-    ports:
-      - "6379:6379"      # Ray client port
-      - "8265:8265"      # Ray dashboard
-      - "10001:10001"    # Ray GCS server
-    
-    # Command to run when container starts
-    command: >
-      bash -c "
-      ray start --head 
-        --port=6379 
-        --num-cpus=4 
-        --object-store-memory=1000000000 &&
-      sleep infinity
-      "
-    
-    # Health check (ensures container is ready before workers start)
-    healthcheck:
-      test: ["CMD", "ray", "status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  ray-worker:
-    # Same image as head
-    build:
-      context: .
-      dockerfile: Dockerfile
-    
-    # Depends on head being healthy
-    depends_on:
-      ray-head:
-        condition: service_healthy
-    
-    # Command connects to head node
-    command: >
-      bash -c "
-      ray start 
-        --address=ray-head:6379 
-        --num-cpus=2 
-        --object-store-memory=1000000000 &&
-      sleep infinity
-      "
-    
-    # Scale to N worker nodes (we set this to 2)
-    deploy:
-      replicas: 2
-```
-
-**Key Concepts:**
-- **Services:** Each service is a separate container
-- **build:** Instructions to build the Docker image
-- **ports:** Expose container ports to your host machine
-- **command:** What to run when the container starts
-- **depends_on with health check:** Ensures head is ready before workers start
-- **environment:** Pass configuration as environment variables
-- **networks:** Automatic network so containers can communicate
 
 ---
 
-### Method 1: Run a Single Command
+## Quick Start (single-host)
 
 ```bash
-docker-compose exec ray-head python /app/example-job.py
+cd installation/02-docker-compose
+
+# 1. Configure
+cp .env.example .env
+# Edit .env: set HEAD_NUM_CPUS, WORKER_NUM_CPUS, WORKER_REPLICAS, etc.
+
+# 2. Build image
+make build
+
+# 3. Start cluster (1 head + WORKER_REPLICAS workers)
+make up
+
+# 4. Verify
+make status          # ray status from inside head container
+
+# 5. Run a test job
+make job
+
+# 6. Open dashboard
+#    http://localhost:8265
+
+# 7. Scale workers without restart
+make scale N=5
+
+# 8. Tear down
+make down
 ```
 
-### Method 2: Interactive Shell
+---
+
+## Multi-node Cluster (8 physical nodes)
+
+### Option A — Manual (per node)
+
+**On the head node (192.168.3.73):**
+```bash
+cp .env.example .env   # set RAY_HEAD_HOST, HEAD_NUM_CPUS, etc.
+make head-up
+```
+
+**On each worker node:**
+```bash
+# copy the .env, Dockerfile, and docker-compose.worker.yml to the worker
+# then:
+cp .env.example .env   # set RAY_HEAD_HOST, WORKER_NUM_CPUS, WORKER_NUM_GPUS
+make worker-up
+```
+
+### Option B — Automated SSH deploy
 
 ```bash
-# Open a shell in the head container
-docker-compose exec ray-head bash
+# On the head node, with SSH access to all workers:
+cp .env.example .env
+# set WORKER_HOSTS="192.168.3.74 192.168.3.75 ..."
+# set SSH_USER=ubuntu (or your user)
 
-# Inside the container:
-root@ray-head:/# python example-job.py
-root@ray-head:/# ray status
-root@ray-head:/# exit
+make cluster-up      # builds + deploys head, then SSHes into each worker
+make cluster-status  # ray status showing all nodes
+make cluster-down    # tear down everything
 ```
 
-### Method 3: Submit Jobs Remotely
+The script (`scripts/deploy-cluster.sh`) rsyncs the compose files + `.env` to
+`/opt/ray-cluster/` on each worker before starting containers.
 
-Edit `example-job.py` to connect to the remote cluster:
+---
 
-```python
-import ray
+## Choosing the Right Image
 
-# Connect to the Ray head node
-ray.init(address="ray://ray-head:10001")
-
-@ray.remote
-def my_task(x):
-    return x * x
-
-result = ray.get(my_task.remote(5))
-print(result)
-
-ray.shutdown()
-```
-
-Then run from your local machine:
+The `BASE_IMAGE` variable in `.env` controls what gets built:
 
 ```bash
-python example-job.py
+# CPU-only nodes (default)
+BASE_IMAGE=rayproject/ray:2.47.0-py311
+
+# GPU nodes (CUDA + all GPU drivers pre-installed)
+BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu
 ```
 
-## Monitoring the Cluster
-
-### Ray Dashboard (Web UI)
-
-The Ray Dashboard provides a GUI for cluster monitoring:
-
-```
-http://localhost:8265
-```
-
-You'll see:
-- Cluster configuration (nodes, CPUs, GPUs, memory)
-- Running jobs and tasks
-- Object store memory usage
-- Performance metrics and logs
-
-### Command Line Monitoring
+For a mixed cluster (CPU head + GPU workers), set different `BASE_IMAGE` values
+in the head and worker `.env` files, or override at build time:
 
 ```bash
-# Check cluster status
-docker-compose exec ray-head ray status
-
-# View Ray logs
-docker-compose logs -f ray-head
-docker-compose logs -f ray-worker-1
-
-# Monitor resource usage
-docker stats
-
-# Enter a container
-docker exec -it ray-cluster-mgmt_ray-head_1 bash
+# On a GPU worker node
+BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu make worker-up
 ```
 
-## Scaling the Cluster
+---
 
-### Add More Worker Nodes at Runtime
+## All Make Targets
 
-```bash
-# Scale up to 5 worker nodes
-docker-compose up -d --scale ray-worker=5
+```
+Single-host:
+  make build            Build the Ray image
+  make up               Start head + workers
+  make down             Stop everything
+  make scale N=5        Change worker count without restart
+  make logs             Follow head container logs
+  make status           ray status (cluster resources)
+  make shell            bash inside the head container
+  make job              Run example-job.py
+  make clean            Remove containers, volumes, and built images
 
-# Scale down to 1 worker node
-docker-compose up -d --scale ray-worker=1
-
-# Verify the change
-docker-compose ps
+Multi-node:
+  make head-up          Start head on this machine
+  make head-down        Stop head on this machine
+  make worker-up        Start worker on this machine
+  make worker-down      Stop worker on this machine
+  make cluster-up       SSH-deploy to all nodes
+  make cluster-down     SSH-teardown all nodes
+  make cluster-status   ray status from head
 ```
 
-## Configuration Options
+---
 
-### Environment Variables (`.env` file)
+## Key .env Variables
 
-Create a `.env` file to customize configuration:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BASE_IMAGE` | `rayproject/ray:2.47.0-py311` | Docker base image |
+| `RAY_HEAD_HOST` | `192.168.3.73` | Head node IP (multi-node) |
+| `RAY_GCS_PORT` | `6379` | Ray GCS port |
+| `RAY_DASHBOARD_PORT` | `8265` | Dashboard port |
+| `RAY_CLIENT_PORT` | `10001` | Ray client (remote `ray://`) port |
+| `HEAD_NUM_CPUS` | `4` | CPUs reserved on head |
+| `HEAD_OBJECT_STORE_MEMORY` | `4000000000` | Head object store (bytes) |
+| `WORKER_NUM_CPUS` | `32` | CPUs per worker |
+| `WORKER_NUM_GPUS` | `1` | GPUs per worker (multi-node) |
+| `WORKER_OBJECT_STORE_MEMORY` | `8000000000` | Worker object store (bytes) |
+| `WORKER_REPLICAS` | `2` | Workers in single-host mode |
+| `SHARED_STORAGE_PATH` | `/mnt/cluster_storage` | Path to shared NFS storage |
+| `NCCL_SOCKET_IFNAME` | `enp0s31f6,eno1` | NIC for NCCL (multi-GPU) |
+| `GLOO_SOCKET_IFNAME` | `enp0s31f6,eno1` | NIC for Gloo (multi-GPU) |
+| `WORKER_HOSTS` | *(empty)* | Space-separated worker IPs for SSH deploy |
+| `SSH_USER` | `ubuntu` | SSH user for worker deploy |
 
-```env
-# Ray head configuration
-RAY_HEAD_PORT=6379
-RAY_HEAD_DASHBOARD_PORT=8265
+---
 
-# Ray worker configuration
-RAY_WORKER_CPUS=2
-RAY_WORKER_MEMORY=2000000000  # 2GB in bytes
+## Networking
 
-# Image configuration
-PYTHON_VERSION=3.9
-```
+**Single-host mode** uses a Docker bridge network (`ray-net`). Containers
+reference each other by hostname (`ray-head:6379`).
 
-### Modifying `docker-compose.yml`
+**Multi-node mode** uses `network_mode: host` on every node so Ray processes
+bind to the real host IP without NAT. This is required for inter-node Ray
+communication and NCCL GPU collectives.
 
-Change resource limits for workers:
-
-```yaml
-services:
-  ray-worker:
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '1'
-          memory: 1G
-```
-
-## Stopping and Cleaning Up
-
-### Pause the Cluster (keeps containers)
-
-```bash
-docker-compose pause
-docker-compose unpause
-```
-
-### Stop the Cluster (removes containers, keeps images)
-
-```bash
-docker-compose stop
-docker-compose start  # Restart later
-```
-
-### Remove Everything
-
-```bash
-# Remove containers, networks (keeps images)
-docker-compose down
-
-# Remove containers, networks, and volumes
-docker-compose down -v
-
-# Remove containers, networks, volumes, and images
-docker-compose down -v --rmi all
-```
+---
 
 ## Troubleshooting
 
-### Port Conflicts
-
-If port 6379 or 8265 is already in use:
-
-```yaml
-# Edit docker-compose.yml
-services:
-  ray-head:
-    ports:
-      - "6380:6379"     # Map to a different port
-      - "8266:8265"
-```
-
-### Workers Can't Connect to Head
-
-Ensure all containers are on the same network:
-
+**Workers can't reach the head:**
 ```bash
-docker network inspect ray-network
-
-# Check connectivity from a worker
-docker-compose exec ray-worker-1 ping ray-head
+# From a worker node, verify the GCS port is reachable
+nc -zv 192.168.3.73 6379
 ```
 
-### Out of Disk Space
-
-Clean up unused Docker resources:
-
+**GPU not visible inside the container:**
 ```bash
-docker system prune -a --volumes
+# Verify the NVIDIA container runtime is installed
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 ```
 
-### Memory Issues
+**NCCL hangs on multi-GPU training:**
+- Check `NCCL_SOCKET_IFNAME` matches the actual interface name (`ip link`)
+- Comma-separated list; do not use IP prefixes (`192.168.` is invalid here)
+- See `memory/project_vllm_ray_gloo.md` for the Gloo equivalent
 
-Increase Docker's memory limit in Docker Desktop settings, or reduce worker count:
-
+**Dashboard not loading:**
 ```bash
-docker-compose up -d --scale ray-worker=2  # Use fewer workers
+make logs    # look for "Dashboard available at" line
 ```
-
-### Logs and Debugging
-
-```bash
-# View detailed logs
-docker-compose logs --tail=50
-
-# Follow logs in real-time
-docker-compose logs -f
-
-# Check a specific service
-docker-compose logs ray-head
-```
-
-## Custom Workloads
-
-### Add Your Own Script
-
-1. Place your `.py` file in this directory
-2. Mount it in `docker-compose.yml`:
-
-```yaml
-ray-head:
-  volumes:
-    - ./my-script.py:/app/my-script.py
-```
-
-3. Run it:
-
-```bash
-docker-compose exec ray-head python /app/my-script.py
-```
-
-### Install Additional Packages
-
-Edit the `Dockerfile` to add packages:
-
-```dockerfile
-RUN pip install scikit-learn xgboost
-```
-
-Then rebuild:
-
-```bash
-docker-compose build
-docker-compose up -d
-```
-
-## Performance Tips
-
-1. **Use named volumes** for better I/O performance on macOS/Windows.
-2. **Increase Docker memory** if workers crash unexpectedly.
-3. **Use `--scale`** to adjust worker count based on workload.
-4. **Mount code as volumes** to avoid rebuilding images each change.
-
-## Next Steps
-
-1. Modify `example-job.py` for your use case.
-2. Add custom packages to the `Dockerfile`.
-3. Scale the cluster as needed.
-4. Export and deploy the image to a container registry (Docker Hub, ECR, etc.).
-
-## Resources
-
-- [Docker Compose Documentation](https://docs.docker.com/compose/)
-- [Ray in Docker](https://docs.ray.io/en/latest/ray-core/installation.html#docker)
-- [Ray Dashboard](https://docs.ray.io/en/latest/ray-core/ray-dashboard.html)
-- [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)

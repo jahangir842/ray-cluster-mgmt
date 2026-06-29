@@ -66,3 +66,6 @@ Thumbs.db
 monitoring/.env
 monitoring/prometheus/data/
 monitoring/grafana/data/
+
+# Docker Compose secrets
+installation/02-docker-compose/.env

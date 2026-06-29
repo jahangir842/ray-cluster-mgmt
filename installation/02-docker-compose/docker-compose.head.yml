@@ -1,0 +1,40 @@
+# Multi-node mode — HEAD node only.
+# Run this file on the physical head machine (192.168.3.73).
+#
+# Uses host networking so worker containers on other machines can reach
+# Ray's GCS port directly via the head node's real IP.
+#
+# Usage (on the head node):
+#   cp .env.example .env && vim .env
+#   docker compose -f docker-compose.head.yml build
+#   docker compose -f docker-compose.head.yml up -d
+#   docker compose -f docker-compose.head.yml logs -f
+
+name: ray-head
+
+services:
+
+  ray-head:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311}
+    container_name: ray-head
+    # host networking gives Ray direct access to the NIC — no port-mapping
+    # needed, and worker nodes connect to the real host IP without NAT.
+    network_mode: host
+    environment:
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-enp0s31f6,eno1}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-enp0s31f6,eno1}
+    volumes:
+      - ../../examples:/app/examples:ro
+      - /tmp/ray:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/mnt/cluster_storage}:/mnt/cluster_storage
+    command: >
+      ray start --head
+        --port=${RAY_GCS_PORT:-6379}
+        --dashboard-port=${RAY_DASHBOARD_PORT:-8265}
+        --num-cpus=${HEAD_NUM_CPUS:-4}
+        --object-store-memory=${HEAD_OBJECT_STORE_MEMORY:-4000000000}
+        --block
+    restart: unless-stopped

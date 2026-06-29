@@ -1,32 +1,25 @@
-FROM python:3.9-slim
+# ARG lets callers swap CPU/GPU base at build time:
+#   docker compose build                        → CPU image (default)
+#   BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu docker compose build → GPU image
+ARG BASE_IMAGE=rayproject/ray:2.47.0-py311
+FROM ${BASE_IMAGE}
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
-WORKDIR /app
-
-# Install Python dependencies
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install \
-    ray[default] \
-    numpy \
-    pandas \
+# Extra ML/observability packages not bundled in the base Ray image
+RUN pip install --no-cache-dir \
+    "transformers>=4.40.0" \
+    "accelerate>=0.30.0" \
+    huggingface_hub \
+    outlines \
+    tensorboard \
+    sentencepiece \
+    protobuf \
+    mlflow \
     scikit-learn \
     matplotlib \
     jupyter \
     ipython
 
-# Create a non-root user (optional but recommended)
-RUN useradd -m -s /bin/bash ray
+WORKDIR /app
 
-# Expose ports
+# Ray ports: GCS | Dashboard | Client
 EXPOSE 6379 8265 10001
-
-# Default command (can be overridden by docker-compose)
-CMD ["ray", "start", "--head"]
