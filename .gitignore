@@ -69,3 +69,4 @@ monitoring/grafana/data/
 
 # Docker Compose secrets
 installation/02-docker-compose/.env
+ray-cluster-management-presentation.pdf
