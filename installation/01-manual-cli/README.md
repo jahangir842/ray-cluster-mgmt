@@ -187,21 +187,15 @@ python -c "import ray; print(ray.__version__)"
 ssh user@<Node IP>
 ```
 
-Ensure conda environment is activated
-
-```bash
-conda activate ray-env
-```
-
 Set environment variables:
 
 Open the .bashrc file (or .zshrc if you use Zsh) in a text editor:
 
 ```bash
-bashnano ~/.bashrc
+nano ~/.bashrc
 ```
 
-Scroll to the very bottom of the file and paste your command:
+Scroll to the very bottom of the file and paste this command:
 
 ```bash
 # Set network interface for Gloo/ (must be set before ray start)
@@ -210,6 +204,12 @@ Scroll to the very bottom of the file and paste your command:
 export GLOO_SOCKET_IFNAME=enp0s31f6   # use this node's physical interface
 export NCCL_SOCKET_IFNAME=enp0s31f6
 export NCCL_IB_DISABLE=1
+```
+
+Ensure conda environment is activated
+
+```bash
+conda activate ray-env
 ```
 
 Start Ray:
