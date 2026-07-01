@@ -176,17 +176,6 @@ pip install ray[default]
 python -c "import ray; print(ray.__version__)"
 ```
 
----
-
-## Step 2: Start the Ray Head Node
-
-**SSH Connection:** SSH into your head node:
-
-```bash
-# Connect to head node ( e.g 192.168.3.73)
-ssh user@<Node IP>
-```
-
 Set environment variables:
 
 Open the .bashrc file (or .zshrc if you use Zsh) in a text editor:
@@ -205,6 +194,19 @@ export GLOO_SOCKET_IFNAME=enp0s31f6   # use this node's physical interface
 export NCCL_SOCKET_IFNAME=enp0s31f6
 export NCCL_IB_DISABLE=1
 ```
+
+---
+
+## Step 2: Start the Ray Head Node
+
+**SSH Connection:** SSH into your head node:
+
+```bash
+# Connect to head node ( e.g 192.168.3.73)
+ssh user@<Node IP>
+```
+
+
 
 Ensure conda environment is activated
 
@@ -259,24 +261,9 @@ ssh user@WORKER_NODE_IP
 
 ## Step 4: Connect Worker Nodes to Head Node
 
-On **each worker node**, set the interface env vars and then connect to the head.
-
-> **Important:** `GLOO_SOCKET_IFNAME` must be set in the **same shell** that runs
-> `ray start`. The Ray worker process inherits env vars at startup and keeps them
-> for its lifetime. If you change `.bashrc` later, restart the worker for it to
-> take effect. Without this, Gloo auto-detects and may pick a Docker bridge
-> (172.x.x.x) that is unreachable from other nodes.
-
 ```bash
 # Ensure conda environment is activated on the worker
 conda activate ray-env
-
-# Set network interface for this node (must match the node's physical NIC)
-# RTX 4500 nodes (pc1-pc5, 192.168.3.71-75): enp0s31f6
-# RTX 3090 nodes (pc6-pc8, 192.168.3.76-78): eno1
-export GLOO_SOCKET_IFNAME=enp0s31f6   # adjust to this node's interface
-export NCCL_SOCKET_IFNAME=enp0s31f6
-export NCCL_IB_DISABLE=1
 
 # Connect to head node (192.168.3.73)
 ray start --address='192.168.3.73:6379'
