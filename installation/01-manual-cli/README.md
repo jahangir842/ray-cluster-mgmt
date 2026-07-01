@@ -187,19 +187,34 @@ python -c "import ray; print(ray.__version__)"
 ssh user@<Node IP>
 ```
 
-Set environment variables, then start Ray:
+Ensure conda environment is activated
 
 ```bash
-# Ensure conda environment is activated
 conda activate ray-env
+```
 
-# Set network interface for Gloo/NCCL (must be set before ray start)
+Set environment variables:
+
+Open the .bashrc file (or .zshrc if you use Zsh) in a text editor:
+
+```bash
+bashnano ~/.bashrc
+```
+
+Scroll to the very bottom of the file and paste your command:
+
+```bash
+# Set network interface for Gloo/ (must be set before ray start)
 # RTX 4500 nodes (pc1-pc5): enp0s31f6
 # RTX 3090 nodes (pc6-pc8): eno1
 export GLOO_SOCKET_IFNAME=enp0s31f6   # use this node's physical interface
 export NCCL_SOCKET_IFNAME=enp0s31f6
 export NCCL_IB_DISABLE=1
+```
 
+Start Ray:
+
+```bash
 # Start the head node
 ray start --head --port=6379 --dashboard-host=0.0.0.0
 ```
