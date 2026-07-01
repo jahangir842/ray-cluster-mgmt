@@ -170,7 +170,8 @@ conda activate ray-env
 pip install --upgrade pip
 
 # Install Ray with all libraries
-pip install ray[default]
+# Ray version should be the same across all cluster nodes.
+pip install ray[default]==2.55.1
 
 # Verify installation
 python -c "import ray; print(ray.__version__)"
