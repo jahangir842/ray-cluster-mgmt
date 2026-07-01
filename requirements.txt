@@ -2,7 +2,7 @@
 transformers>=4.40.0
 accelerate>=0.30.0
 huggingface_hub
-
+vllm==0.6.6
 # vLLM guided decoding — outlines replaces xgrammar as the backend due to a
 # TokenizerInfo.from_huggingface bug in xgrammar 0.2.x (see docs/troubleshooting-vllm.md)
 outlines
