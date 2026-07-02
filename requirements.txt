@@ -13,3 +13,10 @@ sentencepiece
 protobuf
 mlflow
 matplotlib
+
+# Ray Serve LLM (examples/7-ray-serve) — ray.llm._internal unconditionally
+# imports boto3 for its cloud model-mirroring path even when unused, so it's
+# a hard import-time dependency, not optional. Install `ray[serve,llm]`
+# itself separately (see CLAUDE.md) — this only covers the extra pulled in
+# underneath it that isn't declared as a dependency.
+boto3
