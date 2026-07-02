@@ -1,0 +1,15 @@
+[Unit]
+Description=Auto-restart watchdog for bare-metal vLLM-on-Ray serving (3.vllm-with-ray-backend.md)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Update this path if the repo lives somewhere else on pc3-4500 (head node).
+ExecStart=/home/user/projects/ray-cluster-mgmt/examples/6.vllm/watchdog.sh
+Restart=always
+RestartSec=10
+User=user
+
+[Install]
+WantedBy=multi-user.target
