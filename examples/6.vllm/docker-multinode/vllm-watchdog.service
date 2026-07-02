@@ -1,0 +1,15 @@
+[Unit]
+Description=Auto-restart watchdog for multi-node vLLM-on-Ray serving
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# Update this path if the repo lives somewhere else on the head node.
+ExecStart=/home/user/projects/ray-cluster-mgmt/examples/6.vllm/docker-multinode/watchdog.sh
+Restart=always
+RestartSec=10
+User=user
+
+[Install]
+WantedBy=multi-user.target

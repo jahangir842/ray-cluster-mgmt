@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Bring up the multi-node vLLM-on-Ray cluster in Docker and start serving.
-# RUN THIS ON THE HEAD NODE (192.168.3.73).
+# Bring up the same multi-node Ray cluster as ../6.vllm/docker-multinode, then
+# serve DeepSeek-R1-70B via Ray Serve (serve_vllm.py) instead of the raw
+# `vllm serve` CLI. RUN THIS ON THE HEAD NODE (192.168.3.73).
 #
-# Prereq: the bare-metal Ray cluster must be stopped first (it holds port 6379).
-#         Run ./stop-baremetal-ray.sh once before the first Docker bring-up.
+# Reuses node-up.sh from 6.vllm/docker-multinode so node provisioning (NIC
+# detection, shm sizing, CUDA compat fix) stays a single source of truth.
+#
+# Prereq: no bare-metal or docker-multinode vLLM cluster already holding
+# port 6379 / the GPUs. Run ../6.vllm/docker-multinode/stop-baremetal-ray.sh
+# and/or ../6.vllm/docker-multinode/cluster-down.sh first if needed.
 set -euo pipefail
 
 HEAD_IP="192.168.3.73"
@@ -12,12 +17,13 @@ SSH_USER="user"
 NAME="vllm-ray"
 NFS_DIR="/mnt/cluster_storage/vllm-ray"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+NODE_UP="$HERE/../6.vllm/docker-multinode/node-up.sh"
 
 DOCKER="docker"; $DOCKER info >/dev/null 2>&1 || DOCKER="sudo docker"
 
 echo ">> publishing node-up.sh to shared storage ($NFS_DIR)"
 mkdir -p "$NFS_DIR"
-cp "$HERE/node-up.sh" "$NFS_DIR/node-up.sh"
+cp "$NODE_UP" "$NFS_DIR/node-up.sh"
 chmod +x "$NFS_DIR/node-up.sh"
 
 echo ">> starting Ray HEAD on $HEAD_IP"
@@ -45,13 +51,19 @@ if [ "$ok" != "1" ]; then
   exit 1
 fi
 
-"$HERE/launch-vllm.sh"
+echo ">> copying serve_vllm.py into the head container"
+$DOCKER cp "$HERE/serve_vllm.py" "$NAME:/tmp/serve_vllm.py"
+
+echo ">> launching Ray Serve LLM app inside the head container"
+$DOCKER exec -d "$NAME" bash -lc \
+  "RAY_ADDRESS=$HEAD_IP:6379 python /tmp/serve_vllm.py > /tmp/serve_vllm.log 2>&1"
 
 cat <<EOF
 
->> Server starting. It will take a few minutes to load 70B across 8 nodes.
-   Watch load progress :  docker exec $NAME tail -f /tmp/vllm.log
+>> Serve app starting. It will take a few minutes to load 70B across 8 nodes.
+   Watch load progress  :  docker exec $NAME tail -f /tmp/serve_vllm.log
    Ready when this works:  curl http://$HEAD_IP:8000/v1/models
    Ray dashboard         :  http://$HEAD_IP:8265
-   Tear everything down  :  ./cluster-down.sh
+   Serve dashboard       :  http://$HEAD_IP:8265/#/serve
+   Tear everything down  :  ../6.vllm/docker-multinode/cluster-down.sh
 EOF
