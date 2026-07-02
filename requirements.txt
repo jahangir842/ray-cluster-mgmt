@@ -17,6 +17,9 @@ matplotlib
 # Ray Serve LLM (examples/7-ray-serve) — ray.llm._internal unconditionally
 # imports boto3 for its cloud model-mirroring path even when unused, so it's
 # a hard import-time dependency, not optional. Install `ray[serve,llm]`
-# itself separately (see CLAUDE.md) — this only covers the extra pulled in
-# underneath it that isn't declared as a dependency.
+# itself separately (see CLAUDE.md), PINNED to 2.48.0 — newer Ray releases
+# restructured ray.llm._internal to import vllm.entrypoints.openai.chat_completion,
+# which doesn't exist in vllm==0.6.6 (pinned above) and crashes at import
+# time. Ray 2.48.0 vendors its own OpenAI protocol models instead and has no
+# such dependency; confirmed working against this repo's serve_vllm.py.
 boto3

@@ -54,15 +54,25 @@ guide.
 ## Dependency note
 
 `ray.serve.llm` ships inside `ray` itself but its runtime path pulls in the
-`ray[serve,llm]` extra. Install it in the `ray-env` conda environment — on
-**every** node, not just the head: Ray Serve schedules the deployment replica
-wherever it finds resources, and vLLM's own Ray executor places PP workers
-across all 8 nodes, so any of them may need to import `ray.llm` internals.
+`ray[serve,llm]` extra, and its version **must be pinned to 2.48.0**. Newer
+Ray releases restructured `ray.llm._internal` to import
+`vllm.entrypoints.openai.chat_completion`, which doesn't exist in this
+cluster's pinned `vllm==0.6.6` and crashes at import time
+(`ModuleNotFoundError: No module named 'vllm.entrypoints.openai.chat_completion'`).
+2.48.0 vendors its own OpenAI protocol models instead and has no such
+dependency — confirmed by inspecting its source, and it's the version
+`serve_vllm.py`'s `LLMConfig`/`build_openai_app` field names were written
+against.
+
+Install it in the `ray-env` conda environment — on **every** node, not just
+the head: Ray Serve schedules the deployment replica wherever it finds
+resources, and vLLM's own Ray executor places PP workers across all 8 nodes,
+so any of them may need to import `ray.llm` internals.
 
 ```bash
 conda activate ray-env
-pip install "ray[serve,llm]"
+pip install "ray[serve,llm]==2.48.0" boto3
 ```
 
-This hasn't been run against the live cluster yet — treat the first run as a
-dry run and watch the driver's stdout/`ray status` closely.
+This hasn't been run end-to-end against the live cluster yet — treat the
+first run as a dry run and watch the driver's stdout/`ray status` closely.
