@@ -1,12 +1,12 @@
 # Ray Cluster — Docker Compose (IaC)
 
-Parameterized Docker Compose setup for Ray clusters. Supports two modes:
+Parameterized Docker Compose setup for the physical Ray cluster. One compose
+file runs on every node; a **profile** picks the role:
 
-| Mode | File | Use case |
-|------|------|----------|
-| **Single-host** | `docker-compose.yml` | Local dev, CI, workshops on one machine |
-| **Multi-node head** | `docker-compose.head.yml` | Run on the physical head node (192.168.3.73) |
-| **Multi-node worker** | `docker-compose.worker.yml` | Run on each physical worker node |
+| Profile | Runs on | Role |
+|---------|---------|------|
+| `head` | 192.168.3.73 | Ray head (GCS, dashboard, client server) |
+| `worker` | each worker node | Ray worker (CPU + GPU) |
 
 All tunables live in `.env` — no editing YAML files.
 
@@ -19,66 +19,38 @@ All tunables live in `.env` — no editing YAML files.
 ├── .env.example                # Config template (committed)
 ├── .env                        # Your values (git-ignored)
 ├── Dockerfile                  # Parameterized Ray image (CPU or GPU via BASE_IMAGE)
-├── docker-compose.yml          # Single-host: head + N workers
-├── docker-compose.head.yml     # Multi-node: head only, host networking
-├── docker-compose.worker.yml   # Multi-node: worker only, host networking + GPU
-├── Makefile                    # Convenience targets (make help)
-├── scripts/
-│   └── deploy-cluster.sh       # SSH-based deploy to all 8 nodes
-└── example-job.py              # Smoke-test job
+├── docker-compose.yml          # head/worker by profile, host networking
+└── scripts/
+    └── deploy-cluster.sh       # SSH-based deploy to all nodes
+
+# The smoke-test job lives at repo root: examples/example-job.py
+# (mounted into the head container at /app/examples/)
 ```
 
 ---
 
-## Quick Start (single-host)
-
-```bash
-cd installation/02-docker-compose
-
-# 1. Configure
-cp .env.example .env
-# Edit .env: set HEAD_NUM_CPUS, WORKER_NUM_CPUS, WORKER_REPLICAS, etc.
-
-# 2. Build image
-make build
-
-# 3. Start cluster (1 head + WORKER_REPLICAS workers)
-make up
-
-# 4. Verify
-make status          # ray status from inside head container
-
-# 5. Run a test job
-make job
-
-# 6. Open dashboard
-#    http://localhost:8265
-
-# 7. Scale workers without restart
-make scale N=5
-
-# 8. Tear down
-make down
-```
-
----
-
-## Multi-node Cluster (8 physical nodes)
+## Quick Start
 
 ### Option A — Manual (per node)
 
 **On the head node (192.168.3.73):**
 ```bash
-cp .env.example .env   # set RAY_HEAD_HOST, HEAD_NUM_CPUS, etc.
-make head-up
+cd installation/02-docker-compose
+cp .env.example .env                     # set RAY_HEAD_HOST, HEAD_NUM_CPUS, etc.
+docker compose --profile head up -d
+docker compose --profile head exec ray-head ray status
 ```
 
 **On each worker node:**
 ```bash
-# copy the .env, Dockerfile, and docker-compose.worker.yml to the worker
-# then:
-cp .env.example .env   # set RAY_HEAD_HOST, WORKER_NUM_CPUS, WORKER_NUM_GPUS
-make worker-up
+# copy the .env, Dockerfile, and docker-compose.yml to the worker, then:
+cp .env.example .env                     # set RAY_HEAD_HOST, WORKER_NUM_CPUS, WORKER_NUM_GPUS
+docker compose --profile worker up -d
+```
+
+Open the dashboard at **http://192.168.3.73:8265**, and run the test job with:
+```bash
+docker compose --profile head exec ray-head python /app/examples/example-job.py
 ```
 
 ### Option B — Automated SSH deploy
@@ -89,13 +61,13 @@ cp .env.example .env
 # set WORKER_HOSTS="192.168.3.74 192.168.3.75 ..."
 # set SSH_USER=ubuntu (or your user)
 
-make cluster-up      # builds + deploys head, then SSHes into each worker
-make cluster-status  # ray status showing all nodes
-make cluster-down    # tear down everything
+bash scripts/deploy-cluster.sh up     # builds + deploys head, then SSHes into each worker
+bash scripts/deploy-cluster.sh down   # tear down everything
 ```
 
-The script (`scripts/deploy-cluster.sh`) rsyncs the compose files + `.env` to
-`/opt/ray-cluster/` on each worker before starting containers.
+The script rsyncs `docker-compose.yml`, `Dockerfile`, and `.env` to
+`/opt/ray-cluster/` on each worker before starting containers with the
+`worker` profile.
 
 ---
 
@@ -104,45 +76,45 @@ The script (`scripts/deploy-cluster.sh`) rsyncs the compose files + `.env` to
 The `BASE_IMAGE` variable in `.env` controls what gets built:
 
 ```bash
-# CPU-only nodes (default)
+# CPU-only nodes
 BASE_IMAGE=rayproject/ray:2.47.0-py311
 
 # GPU nodes (CUDA + all GPU drivers pre-installed)
 BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu
 ```
 
-For a mixed cluster (CPU head + GPU workers), set different `BASE_IMAGE` values
-in the head and worker `.env` files, or override at build time:
+The head defaults to the CPU image and workers default to the GPU image. To
+override at build time on a specific node:
 
 ```bash
-# On a GPU worker node
-BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu make worker-up
+BASE_IMAGE=rayproject/ray:2.47.0-py311-gpu \
+  docker compose --profile worker up -d --build
 ```
 
 ---
 
-## All Make Targets
+## Command Reference
 
-```
-Single-host:
-  make build            Build the Ray image
-  make up               Start head + workers
-  make down             Stop everything
-  make scale N=5        Change worker count without restart
-  make logs             Follow head container logs
-  make status           ray status (cluster resources)
-  make shell            bash inside the head container
-  make job              Run example-job.py
-  make clean            Remove containers, volumes, and built images
+`docker-compose.yml` is the default file, so no `-f` flag is needed — just pick
+the profile for the node's role.
 
-Multi-node:
-  make head-up          Start head on this machine
-  make head-down        Stop head on this machine
-  make worker-up        Start worker on this machine
-  make worker-down      Stop worker on this machine
-  make cluster-up       SSH-deploy to all nodes
-  make cluster-down     SSH-teardown all nodes
-  make cluster-status   ray status from head
+```bash
+# ── Head node ────────────────────────────────────────────────
+docker compose --profile head up -d                              # start head
+docker compose --profile head down                               # stop head
+docker compose --profile head build                              # (re)build the image
+docker compose --profile head logs -f                            # follow head logs
+docker compose --profile head exec ray-head ray status           # cluster resources
+docker compose --profile head exec ray-head bash                 # shell in the head container
+docker compose --profile head exec ray-head python /app/examples/example-job.py   # test job
+
+# ── Worker node ──────────────────────────────────────────────
+docker compose --profile worker up -d                            # start worker
+docker compose --profile worker down                             # stop worker
+
+# ── Whole cluster over SSH (from the head node) ──────────────
+bash scripts/deploy-cluster.sh up
+bash scripts/deploy-cluster.sh down
 ```
 
 ---
@@ -152,16 +124,15 @@ Multi-node:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BASE_IMAGE` | `rayproject/ray:2.47.0-py311` | Docker base image |
-| `RAY_HEAD_HOST` | `192.168.3.73` | Head node IP (multi-node) |
+| `RAY_HEAD_HOST` | `192.168.3.73` | Head node IP |
 | `RAY_GCS_PORT` | `6379` | Ray GCS port |
 | `RAY_DASHBOARD_PORT` | `8265` | Dashboard port |
 | `RAY_CLIENT_PORT` | `10001` | Ray client (remote `ray://`) port |
 | `HEAD_NUM_CPUS` | `4` | CPUs reserved on head |
 | `HEAD_OBJECT_STORE_MEMORY` | `4000000000` | Head object store (bytes) |
 | `WORKER_NUM_CPUS` | `32` | CPUs per worker |
-| `WORKER_NUM_GPUS` | `1` | GPUs per worker (multi-node) |
+| `WORKER_NUM_GPUS` | `1` | GPUs per worker |
 | `WORKER_OBJECT_STORE_MEMORY` | `8000000000` | Worker object store (bytes) |
-| `WORKER_REPLICAS` | `2` | Workers in single-host mode |
 | `SHARED_STORAGE_PATH` | `/mnt/cluster_storage` | Path to shared NFS storage |
 | `NCCL_SOCKET_IFNAME` | `enp0s31f6,eno1` | NIC for NCCL (multi-GPU) |
 | `GLOO_SOCKET_IFNAME` | `enp0s31f6,eno1` | NIC for Gloo (multi-GPU) |
@@ -172,12 +143,10 @@ Multi-node:
 
 ## Networking
 
-**Single-host mode** uses a Docker bridge network (`ray-net`). Containers
-reference each other by hostname (`ray-head:6379`).
-
-**Multi-node mode** uses `network_mode: host` on every node so Ray processes
-bind to the real host IP without NAT. This is required for inter-node Ray
-communication and NCCL GPU collectives.
+Every node uses `network_mode: host` so Ray processes bind to the real host IP
+without NAT. This is required for inter-node Ray communication and NCCL GPU
+collectives. Workers reach the head at `RAY_HEAD_HOST:RAY_GCS_PORT`
+(`192.168.3.73:6379` by default).
 
 ---
 
@@ -202,5 +171,5 @@ docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 
 **Dashboard not loading:**
 ```bash
-make logs    # look for "Dashboard available at" line
+docker compose --profile head logs -f    # look for "Dashboard available at" line
 ```

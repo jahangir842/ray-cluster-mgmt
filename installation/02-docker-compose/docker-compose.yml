@@ -1,12 +1,17 @@
-# Single-host mode: head + N workers in a bridge network.
-# Good for local dev, CI, and demos on one machine.
+# Ray cluster — head and worker in one file, selected by profile.
+# Run this same file on every physical node; the profile picks the role.
+#
+# Uses host networking so nodes reach Ray's GCS port via real host IPs.
+# Set RAY_HEAD_HOST in .env to the head node's IP before running workers.
 #
 # Usage:
-#   cp .env.example .env && vim .env
-#   docker compose build
-#   docker compose up -d
-#   docker compose up -d --scale ray-worker=5   # scale workers at runtime
-#   docker compose exec ray-head ray status
+#   # On the head node (192.168.3.73):
+#   docker compose --profile head up -d
+#
+#   # On each worker node:
+#   docker compose --profile worker up -d
+#
+#   docker compose --profile head logs -f
 
 name: ray-cluster
 
@@ -14,77 +19,68 @@ services:
 
   # ── Head Node ──────────────────────────────────────────────────────────────
   ray-head:
+    profiles: ["head"]
     build:
       context: .
       args:
         BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311}
     container_name: ray-head
-    hostname: ray-head
-    ports:
-      - "${RAY_GCS_PORT:-6379}:6379"
-      - "${RAY_DASHBOARD_PORT:-8265}:8265"
-      - "${RAY_CLIENT_PORT:-10001}:10001"
+    # host networking gives Ray direct access to the NIC — no port-mapping
+    # needed, and worker nodes connect to the real host IP without NAT.
+    network_mode: host
+    # share the host's /dev/shm — Ray's object store lives there, and the
+    # container default (64 MB) is far too small for --object-store-memory.
+    ipc: host
     environment:
-      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-eth0}
-      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-eth0}
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-enp0s31f6,eno1}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-enp0s31f6,eno1}
     volumes:
       - ../../examples:/app/examples:ro
-      - ray-tmp:/tmp/ray
-      - ${SHARED_STORAGE_PATH:-/tmp/cluster_storage}:/mnt/cluster_storage
-    networks:
-      - ray-net
+      - /tmp/ray:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/mnt/cluster_storage}:/mnt/cluster_storage
     command: >
       ray start --head
-        --port=6379
-        --dashboard-port=8265
+        --port=${RAY_GCS_PORT:-6379}
+        --dashboard-host=0.0.0.0
+        --dashboard-port=${RAY_DASHBOARD_PORT:-8265}
         --num-cpus=${HEAD_NUM_CPUS:-4}
         --object-store-memory=${HEAD_OBJECT_STORE_MEMORY:-4000000000}
         --block
-    healthcheck:
-      test: ["CMD", "ray", "status"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
     restart: unless-stopped
 
-  # ── Worker Nodes ───────────────────────────────────────────────────────────
+  # ── Worker Node ────────────────────────────────────────────────────────────
   ray-worker:
+    profiles: ["worker"]
     build:
       context: .
       args:
-        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311}
-    depends_on:
-      ray-head:
-        condition: service_healthy
+        # Use the GPU image on worker nodes that have NVIDIA GPUs
+        BASE_IMAGE: ${BASE_IMAGE:-rayproject/ray:2.47.0-py311-gpu}
+    container_name: ray-worker
+    network_mode: host
+    # share the host's /dev/shm for Ray's object store (see head node above)
+    ipc: host
     environment:
-      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-eth0}
-      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-eth0}
+      NCCL_SOCKET_IFNAME: ${NCCL_SOCKET_IFNAME:-enp0s31f6,eno1}
+      GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-enp0s31f6,eno1}
+      # Make all host GPUs visible inside the container
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
-      - ../../examples:/app/examples:ro
-      - ray-tmp:/tmp/ray
-      - ${SHARED_STORAGE_PATH:-/tmp/cluster_storage}:/mnt/cluster_storage
-    networks:
-      - ray-net
+      - /tmp/ray:/tmp/ray
+      - ${SHARED_STORAGE_PATH:-/mnt/cluster_storage}:/mnt/cluster_storage
     command: >
       ray start
-        --address=ray-head:6379
-        --num-cpus=${WORKER_NUM_CPUS:-4}
-        --object-store-memory=${WORKER_OBJECT_STORE_MEMORY:-4000000000}
+        --address=${RAY_HEAD_HOST:-192.168.3.73}:${RAY_GCS_PORT:-6379}
+        --num-cpus=${WORKER_NUM_CPUS:-32}
+        --num-gpus=${WORKER_NUM_GPUS:-1}
+        --object-store-memory=${WORKER_OBJECT_STORE_MEMORY:-8000000000}
         --block
-    healthcheck:
-      test: ["CMD", "ray", "status"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
     deploy:
-      replicas: ${WORKER_REPLICAS:-2}
-
-networks:
-  ray-net:
-    driver: bridge
-
-volumes:
-  ray-tmp:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
