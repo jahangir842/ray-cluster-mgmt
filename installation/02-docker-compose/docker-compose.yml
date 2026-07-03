@@ -36,7 +36,7 @@ services:
       GLOO_SOCKET_IFNAME: ${GLOO_SOCKET_IFNAME:-enp0s31f6,eno1}
     volumes:
       - ../../examples:/app/examples:ro
-      - /tmp/ray:/tmp/ray
+      - /tmp/ray-docker:/tmp/ray
       - ${SHARED_STORAGE_PATH:-/mnt/cluster_storage}:/mnt/cluster_storage
     command: >
       ray start --head
