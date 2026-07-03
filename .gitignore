@@ -28,7 +28,6 @@ env/
 ray-env/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -70,3 +69,7 @@ monitoring/grafana/data/
 # Docker Compose secrets
 installation/02-docker-compose/.env
 ray-cluster-management-presentation.pdf
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
