@@ -56,13 +56,13 @@ sync_files() {
     # Fallback: pipe a tar archive over ssh3 when rsync --rsh is not compatible
     tar -czf - \
       -C "$COMPOSE_DIR" \
-      Dockerfile .env docker-compose.worker.yml \
+      Dockerfile .env docker-compose.yml \
       | remote "$host" "tar -xzf - -C /opt/ray-cluster/"
   else
     rsync -az --delete --rsh="ssh3" \
       "$COMPOSE_DIR/Dockerfile" \
       "$COMPOSE_DIR/.env" \
-      "$COMPOSE_DIR/docker-compose.worker.yml" \
+      "$COMPOSE_DIR/docker-compose.yml" \
       "$SSH_USER@$host:/opt/ray-cluster/"
   fi
 }
@@ -110,12 +110,12 @@ if [[ "$ACTION" == "up" ]]; then
 
   # The head node is where this script runs (or the user SSHes into it).
   # We run compose directly here; for a fully remote head, add an ssh3 call.
-  docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" build
-  docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" up -d
+  docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head build
+  docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head up -d
 
   echo "  → waiting for head to be ready..."
   for i in $(seq 1 12); do
-    if docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" \
+    if docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head \
          exec ray-head ray status &>/dev/null; then
       echo "  ✓ head is ready"
       break
@@ -127,7 +127,7 @@ if [[ "$ACTION" == "up" ]]; then
   if [[ "$HEAD_ONLY" == "true" ]]; then
     echo ""
     echo "=== Head-only deploy complete ==="
-    docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" exec ray-head ray status
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head exec ray-head ray status
     exit 0
   fi
 
@@ -141,14 +141,14 @@ if [[ "$ACTION" == "up" ]]; then
   for HOST in $WORKER_HOSTS; do
     echo "--- $HOST ---"
     sync_files "$HOST"
-    remote "$HOST" "cd /opt/ray-cluster && docker compose -f docker-compose.worker.yml build"
-    remote "$HOST" "cd /opt/ray-cluster && docker compose -f docker-compose.worker.yml up -d"
+    remote "$HOST" "cd /opt/ray-cluster && docker compose -f docker-compose.yml --profile worker build"
+    remote "$HOST" "cd /opt/ray-cluster && docker compose -f docker-compose.yml --profile worker up -d"
     echo "  ✓ worker started on $HOST"
   done
 
   echo ""
   echo "=== Cluster is up ==="
-  docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" exec ray-head ray status
+  docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head exec ray-head ray status
 
 # ── Down action ───────────────────────────────────────────────────────────────
 elif [[ "$ACTION" == "down" ]]; then
@@ -157,14 +157,14 @@ elif [[ "$ACTION" == "down" ]]; then
     for HOST in $WORKER_HOSTS; do
       echo "--- $HOST ---"
       remote "$HOST" \
-        "cd /opt/ray-cluster && docker compose -f docker-compose.worker.yml down" || true
+        "cd /opt/ray-cluster && docker compose -f docker-compose.yml --profile worker down" || true
       echo "  ✓ $HOST stopped"
     done
     echo ""
   fi
 
   echo "=== Stopping head ==="
-  docker compose -f "$COMPOSE_DIR/docker-compose.head.yml" down
+  docker compose -f "$COMPOSE_DIR/docker-compose.yml" --profile head down
   echo "  ✓ head stopped"
 
 else
