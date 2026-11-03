@@ -188,7 +188,7 @@ The [minimal demo guide](docs/minimal-ray-demo.md) also provides workstation
 SSH commands for submission and shutdown. Older guides may reference the
 previous head at `192.168.3.73`; this setup uses **`192.168.3.74`**.
 
-## Scripts to Start and Stop the Whole Cluster
+## Scripts to Start, Stop, and Check the Whole Cluster
 
 Run these from a **local workstation terminal**, inside this repository.
 They SSH into pc4–pc7 and use `~/miniconda3/envs/dask-env` directly, so no
@@ -204,7 +204,8 @@ bash start-cluster.sh
 The [start script](start-cluster.sh) starts the head on pc4, then the
 workers on pc5–pc7, using the same resources as the manual commands above.
 It skips an existing head and workers already connected to it, then prints
-`ray status` and the dashboard address.
+a table of node states, CPU/GPU counts, RAM scheduling capacity, and object
+store capacity, plus the dashboard address.
 
 **Stop the whole cluster:**
 
@@ -215,3 +216,20 @@ bash stop-cluster.sh
 The [stop script](stop-cluster.sh) stops workers first, then pc4.
 It attempts all four computers even if one fails, and returns a nonzero exit
 code if any SSH or stop command fails. Both scripts leave Dask services running.
+
+**Check cluster status:**
+
+```bash
+./staus-cluster.sh
+```
+
+The [status script](staus-cluster.sh) shows each computer by name and IP,
+flags missing or duplicate Ray nodes, and summarizes used/total Ray resources.
+The filename is `staus-cluster.sh`. RAM figures are Ray scheduling capacity,
+not GPU VRAM or measured physical RAM usage.
+
+All three scripts show colored headings and concise progress messages in a
+terminal, with plain output when redirected or when `NO_COLOR` is set.
+Successful Ray command logs are hidden. On failure, they show a short error
+excerpt and the path to the complete log under `/tmp/ray-cluster.*` on the
+workstation. The scripts use the shared `cluster-common.sh` beside them.

@@ -2,10 +2,11 @@
 # Run from the workstation; Ray is installed in dask-env on every node.
 set -euo pipefail
 
-ssh_options=(-o BatchMode=yes -o ConnectTimeout=10)
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/cluster-common.sh"
+heading "START"
 
-echo "Checking Ray head on pc4..."
-ssh "${ssh_options[@]}" pc4@192.168.3.74 'bash -s' <<'REMOTE'
+run_step "pc4 · 192.168.3.74 · head ready" ssh "${ssh_options[@]}" pc4@192.168.3.74 'bash -s' <<'REMOTE'
 set -euo pipefail
 export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
 export RAY_USAGE_STATS_ENABLED=0
@@ -19,7 +20,7 @@ else
 fi
 REMOTE
 
-active_nodes=$(ssh "${ssh_options[@]}" pc4@192.168.3.74 'bash -s' <<'REMOTE'
+run_step "Read connected nodes" ssh "${ssh_options[@]}" pc4@192.168.3.74 'bash -s' <<'REMOTE'
 set -euo pipefail
 export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
 python - <<'PY'
@@ -31,16 +32,15 @@ finally:
     ray.shutdown()
 PY
 REMOTE
-)
+active_nodes="$STEP_OUTPUT"
 
 for node in 5 6 7; do
   address="192.168.3.7$node"
   if [[ " $active_nodes " == *" $address "* ]]; then
-    echo "pc$node is already connected."
+    notice "pc$node · $address · already connected"
     continue
   fi
-  echo "Starting Ray worker on pc$node..."
-  ssh "${ssh_options[@]}" "pc$node@$address" "bash -s -- $address" <<'REMOTE'
+  run_step "pc$node · $address · worker ready" ssh "${ssh_options[@]}" "pc$node@$address" "bash -s -- $address" <<'REMOTE'
 set -euo pipefail
 export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
 export RAY_USAGE_STATS_ENABLED=0
@@ -50,6 +50,4 @@ ray start --address=192.168.3.74:6379 --node-ip-address="$1" \
 REMOTE
 done
 
-ssh "${ssh_options[@]}" pc4@192.168.3.74 \
-  '~/miniconda3/envs/dask-env/bin/ray status --address=192.168.3.74:6379'
-echo "Dashboard: http://192.168.3.74:8265"
+exec bash "$SCRIPT_DIR/staus-cluster.sh"
