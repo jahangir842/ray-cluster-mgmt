@@ -198,10 +198,10 @@ four computers; the scripts use non-interactive SSH.
 **Start the whole cluster:**
 
 ```bash
-bash scripts/start-cluster.sh
+bash start-cluster.sh
 ```
 
-The [start script](scripts/start-cluster.sh) starts the head on pc4, then the
+The [start script](start-cluster.sh) starts the head on pc4, then the
 workers on pc5–pc7, using the same resources as the manual commands above.
 It skips an existing head and workers already connected to it, then prints
 `ray status` and the dashboard address.
@@ -209,9 +209,9 @@ It skips an existing head and workers already connected to it, then prints
 **Stop the whole cluster:**
 
 ```bash
-bash scripts/stop-cluster.sh
+bash stop-cluster.sh
 ```
 
-The [stop script](scripts/stop-cluster.sh) stops workers first, then pc4.
+The [stop script](stop-cluster.sh) stops workers first, then pc4.
 It attempts all four computers even if one fails, and returns a nonzero exit
 code if any SSH or stop command fails. Both scripts leave Dask services running.
