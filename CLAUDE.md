@@ -2,11 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+When writing, reviewing, or refactoring code, read and apply
+`.claude/skills/karpathy-guidelines/SKILL.md`: state assumptions, keep solutions
+simple, make focused changes, and verify the requested outcome.
+
 ## Project Overview
 
 This is a **Ray Cluster Deployment Workshop** — a learning and reference repository for deploying and using Ray distributed computing clusters. It covers three deployment strategies (manual CLI, Docker Compose, KubeRay) and a growing library of example workloads.
 
-The physical cluster used in development: **8 nodes, 268 CPUs, 8 GPUs**, head node at `192.168.3.73`.
+Use the same four GPU computers as `/home/jahangir/projects/dask-mgmt`:
+
+| Node / SSH login | Address | Planned Ray role |
+|---|---|---|
+| `pc4` | `192.168.3.74` | Head + worker |
+| `pc5` | `192.168.3.75` | Worker |
+| `pc6` | `192.168.3.76` | Worker |
+| `pc7` | `192.168.3.77` | Worker |
+| Workstation | `192.168.3.81` | Client |
+
+SSH uses each node's matching username, e.g. `ssh pc4@192.168.3.74`.
+Verified over SSH on 2026-11-03: each node reports 32 logical CPUs and one
+NVIDIA RTX 4500 Ada Generation GPU (24570 MiB), totaling 128 logical CPUs and
+4 GPUs. These are hardware counts, not Ray resource reservations.
+
+Ray 2.59.0 is installed in `dask-env` on all four nodes. On 2026-11-03, the
+cluster started successfully with pc4 (`192.168.3.74`) as head, 4 CPUs and
+0 GPUs advertised per node, and a 1 GiB object store per node. The demo in
+`examples/1-ray-core/cluster-demo.py` passed on all four nodes. All 52
+pre-existing package pins were preserved on every node. See
+`docs/minimal-ray-demo.md` for lifecycle commands; check `ray status` for
+current runtime state. Older guides and deployment defaults reference a previous
+cluster headed by `192.168.3.73`. Adapt those settings to the table above before
+use, including SSH usernames (which differ per node). The user explicitly
+requested installing Ray in the existing `dask-env`; use that environment on
+all four nodes and preserve the existing Dask package versions.
 
 ---
 
@@ -32,7 +61,7 @@ ray.init(
 )
 ```
 
-For remote connections from a laptop: `ray.init(address="ray://192.168.3.73:10001")`
+For remote connections from the workstation: `ray.init(address="ray://192.168.3.74:10001")`
 
 ---
 
@@ -41,7 +70,7 @@ For remote connections from a laptop: `ray.init(address="ray://192.168.3.73:1000
 **Recommended — Ray Job CLI** (enables full dashboard observability):
 ```bash
 ray job submit \
-    --address="http://192.168.3.73:8265" \
+    --address="http://192.168.3.74:8265" \
     --working-dir . \
     -- python my_script.py
 ```
@@ -59,7 +88,7 @@ ray job stop <job_id>                 # Cancel a job
 ray status                            # Check cluster resources
 ```
 
-**Dashboard:** `http://192.168.3.73:8265` (requires internal network or VPN)
+**Dashboard:** `http://192.168.3.74:8265` (requires internal network or VPN)
 
 ---
 

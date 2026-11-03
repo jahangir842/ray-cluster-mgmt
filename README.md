@@ -1,6 +1,39 @@
 # Ray Cluster Management
 
+**Four-computer demo:** follow the [minimal setup guide](docs/minimal-ray-demo.md)
+to [install](docs/minimal-ray-demo.md#install),
+[start the cluster](docs/minimal-ray-demo.md#start),
+[run the demo](docs/minimal-ray-demo.md#run), and
+[stop Ray](docs/minimal-ray-demo.md#stop-ray) using the existing `dask-env`.
+
 Welcome to the **Ray Cluster Management**! This repository contains everything you need to deploy a Ray cluster from scratch—from local development to production-grade Kubernetes deployments. Clone this repo to any machine and follow the step-by-step guides to get a fully functional Ray cluster running.
+
+## Current Target Computers
+
+This project will use the same computers as `../dask-mgmt`:
+
+| Computer | Address | SSH login | Planned Ray role |
+|---|---|---|---|
+| pc4 | `192.168.3.74` | `pc4` | Head + worker |
+| pc5 | `192.168.3.75` | `pc5` | Worker |
+| pc6 | `192.168.3.76` | `pc6` | Worker |
+| pc7 | `192.168.3.77` | `pc7` | Worker |
+| Workstation | `192.168.3.81` | — | Client |
+
+Verified over SSH on 2026-11-03: each cluster computer has 32 logical CPUs
+and one NVIDIA RTX 4500 Ada Generation GPU (24570 MiB). Total: 128 logical
+CPUs and 4 GPUs. The workstation address comes from the Dask repository.
+
+Use the existing `dask-env` for Ray, as requested. See the
+[minimal Ray demo](docs/minimal-ray-demo.md) for installation, start, run, and
+stop commands. Older guides and deployment defaults
+describe a previous cluster at `192.168.3.73`; adapt the head address, worker
+list, and per-node SSH usernames to this table before using them. The planned
+Ray dashboard is `http://192.168.3.74:8265`.
+
+Verified on 2026-11-03: Ray 2.59.0 installed on all four nodes, 16 demo CPUs
+available, and the distributed demo passed on every computer. All 52 existing
+package pins on each node were preserved.
 
 ---
 
