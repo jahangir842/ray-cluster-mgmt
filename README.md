@@ -1,239 +1,189 @@
 # Ray Cluster Management
 
-**Four-computer demo:** follow the [minimal setup guide](docs/minimal-ray-demo.md)
-to [install](docs/minimal-ray-demo.md#install),
-[start the cluster](docs/minimal-ray-demo.md#start),
-[run the demo](docs/minimal-ray-demo.md#run), and
-[stop Ray](docs/minimal-ray-demo.md#stop-ray) using the existing `dask-env`.
+Learning setup: a Ray cluster on the same four GPU computers used by
+`dask-mgmt`, managed by running the Ray CLI directly in one SSH terminal per
+computer. Each computer has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
 
-Welcome to the **Ray Cluster Management**! This repository contains everything you need to deploy a Ray cluster from scratch—from local development to production-grade Kubernetes deployments. Clone this repo to any machine and follow the step-by-step guides to get a fully functional Ray cluster running.
-
-## Current Target Computers
-
-This project will use the same computers as `../dask-mgmt`:
-
-| Computer | Address | SSH login | Planned Ray role |
+| Computer | Address | SSH access | Ray role |
 |---|---|---|---|
-| pc4 | `192.168.3.74` | `pc4` | Head + worker |
-| pc5 | `192.168.3.75` | `pc5` | Worker |
-| pc6 | `192.168.3.76` | `pc6` | Worker |
-| pc7 | `192.168.3.77` | `pc7` | Worker |
-| Workstation | `192.168.3.81` | — | Client |
+| `pc4` | `192.168.3.74` | `ssh pc4@192.168.3.74` | Head + worker |
+| `pc5` | `192.168.3.75` | `ssh pc5@192.168.3.75` | Worker |
+| `pc6` | `192.168.3.76` | `ssh pc6@192.168.3.76` | Worker |
+| `pc7` | `192.168.3.77` | `ssh pc7@192.168.3.77` | Worker |
+| Workstation | `192.168.3.81` | Local terminal | Copies the demo to pc4 |
 
-Verified over SSH on 2026-11-03: each cluster computer has 32 logical CPUs
-and one NVIDIA RTX 4500 Ada Generation GPU (24570 MiB). Total: 128 logical
-CPUs and 4 GPUs. The workstation address comes from the Dask repository.
-
-Use the existing `dask-env` for Ray, as requested. See the
-[minimal Ray demo](docs/minimal-ray-demo.md) for installation, start, run, and
-stop commands. Older guides and deployment defaults
-describe a previous cluster at `192.168.3.73`; adapt the head address, worker
-list, and per-node SSH usernames to this table before using them. The planned
-Ray dashboard is `http://192.168.3.74:8265`.
-
-Verified on 2026-11-03: Ray 2.59.0 installed on all four nodes, 16 demo CPUs
-available, and the distributed demo passed on every computer. All 52 existing
-package pins on each node were preserved.
-
----
-
-## Table of Contents
-
-1. [Introduction to Ray](#introduction-to-ray)
-2. [Deployment Methods](#deployment-methods)
-3. [Repository Structure](#repository-structure)
-4. [Quick Start](#quick-start)
-5. [Prerequisites](#prerequisites)
-
----
-
-## Introduction to Ray
-
-[**Ray**](https://ray.io/) is an open-source, distributed computing framework that makes it simple to scale Python and AI workloads from a single machine to a cluster of thousands of nodes. Whether you're running machine learning training, hyperparameter tuning, or distributed data processing, Ray handles the complex aspects of distributed computing—task scheduling, object storage, fault tolerance, and communication—transparently.
-
-### The Ray Ecosystem
-
-Ray provides a suite of **high-level libraries** built on top of its core distributed execution engine:
-
-- **Ray Core:** Low-level distributed task and actor API.
-- **Ray Train:** Distributed training for PyTorch, TensorFlow, XGBoost, and HuggingFace models.
-- **Ray Tune:** Hyperparameter optimization and population-based training.
-- **Ray Serve:** Model serving and online inference with autoscaling.
-- **Ray Data:** Distributed data loading and preprocessing at scale.
-- **Ray AIR (AI Runtime):** An end-to-end ML platform combining Train, Tune, and Serve.
-
----
-
-## Deployment Methods
-
-This workshop covers **three production-ready deployment strategies**, each suited for different environments:
-
-| **Method** | **Environment** | **Complexity** | **Best For** | **Detailed Guide** |
-|:--|:--|:--|:--|:--|
-| **Manual CLI** | Systemwise | ⭐ Low | Learning, local testing, small fixed clusters | [01-manual-cli](installation/01-manual-cli/README.md) |
-| **Docker Compose** | Single Host (Multi-container) | ⭐⭐ Medium | Local development, isolated testing, demo environments | [02-docker-compose](installation/02-docker-compose/README.md) |
-| **KubeRay** | Kubernetes Cluster | ⭐⭐⭐ High | Production, auto-scaling, cloud-native environments | [03-kuberay](installation/03-kuberay/README.md) |
-| **MLflow** | Head Node (shared storage) | ⭐ Low | Experiment tracking and artifact storage for all nodes | [04-mlflow](installation/04-mlflow/README.md) |
-| **Shared Storage** | All Nodes (NFS) | ⭐ Low | `/mnt/cluster_storage` mounted on every node for checkpoints and artifacts | [05-shared-storage](installation/05-shared-storage/README.md) |
-
-### Quick Comparison Table
-
-| Feature | Manual CLI | Docker Compose | KubeRay |
-|:--|:--|:--|:--|
-| **Dependency Isolation** | ❌ System-level | ✅ Container-level | ✅ Container + Orchestration |
-| **Multi-node Simulation** | ❌ Requires separate machines | ✅ On single host (via networking) | ✅ Multi-node clusters |
-| **Auto-scaling** | Manual | Manual (via `docker-compose scale`) | ✅ Automatic (Kubernetes-native) |
-| **Ease of Setup** | 5 minutes | 10 minutes | 30+ minutes (requires K8s cluster) |
-| **Production Ready** | ✅ Yes (for fixed clusters) | ⚠️ Mostly (for single-host) | ✅✅ Yes (full production) |
-
----
-
-## Repository Structure
-
-```
-ray-cluster-mgmt/
-├── README.md                           # This file
-├── developers-guide.md                 # Developer notes and workflow
-├── requirements.txt                    # Python dependencies
-├── mlflow-command.txt                  # MLflow server reference commands
-├── installation/                       # Cluster deployment methods
-│   ├── 01-manual-cli/                  # Manual SSH-based multi-node deployment
-│   ├── 02-docker-compose/              # Multi-node simulation with Docker
-│   ├── 03-kuberay/                     # Production deployment on Kubernetes
-│   ├── 04-mlflow/                      # MLflow tracking server setup
-│   │   ├── README.md
-│   │   └── start_mlflow_server.sh      # MLflow server startup script
-│   └── 05-shared-storage/              # NFS shared storage setup for all nodes
-│       └── README.md
-└── examples/                           # Example workloads by Ray library
-    ├── 1-ray-core/                     # Raw @ray.remote tasks (stateless parallelism)
-    │   ├── matrix-multiplcation/
-    │   └── squre-root/
-    ├── 2-ray-training/                 # Distributed PyTorch training with Ray Train
-    ├── 3-RL-lib/                       # Reinforcement learning with Ray RLlib
-    ├── 4-ray-serve(LLM)/               # LLM serving with Ray Serve
-    ├── 5-ray-tune/                     # Hyperparameter search with Ray Tune
-    └── 6.vllm/                         # LLM serving with vLLM and Transformers
-        ├── 1.vllm-with-ray-backend.md  # Pipeline-parallel across 8 GPU nodes via Ray
-        ├── 2.vllm-on-single-node.md    # Single-GPU vLLM serving
-        └── 3.serve-with-transformers.md # Serving with HuggingFace Transformers
-```
-
----
-
-## Examples
-
-The `examples/` directory contains ready-to-run workloads organized by Ray library:
-
-| # | Folder | What it covers |
-|:--|:--|:--|
-| 1 | `1-ray-core/` | Stateless parallelism with `@ray.remote` — matrix multiplication, square root across the cluster |
-| 2 | `2-ray-training/` | Distributed PyTorch training with `ray.train.torch.TorchTrainer`; checkpoints to `/mnt/cluster_storage/` |
-| 3 | `3-RL-lib/` | Reinforcement learning experiments with Ray RLlib (PPO) |
-| 4 | `4-ray-serve(LLM)/` | LLM serving with native Ray Serve (no vLLM) |
-| 5 | `5-ray-tune/` | Hyperparameter search using Ray Tune with Optuna backend |
-| 6 | `6.vllm/` | LLM serving with vLLM (single-node and 8-GPU multi-node via Ray) and HuggingFace Transformers |
-
-### Example 6 — LLM Serving
-
-Three guides in [`examples/6.vllm/`](examples/6.vllm/):
-
-| Guide | Description |
-|-------|-------------|
-| [`1.vllm-with-ray-backend.md`](examples/6.vllm/1.vllm-with-ray-backend.md) | vLLM pipeline-parallel serving across **8 GPUs on 8 nodes** using Ray as the distributed executor |
-| [`2.vllm-on-single-node.md`](examples/6.vllm/2.vllm-on-single-node.md) | vLLM single-GPU serving on one node (no Ray required) |
-| [`3.serve-with-transformers.md`](examples/6.vllm/3.serve-with-transformers.md) | Quick inference and FastAPI server using HuggingFace Transformers directly |
-
----
+All four cluster computers already have Miniconda in `~/miniconda3` and use
+the existing **`dask-env`** with Python 3.12. Ray 2.59.0 is installed there.
+No Ray installation is needed on the workstation for this workflow.
 
 ## Quick Start
 
-Choose your deployment method and follow the direct commands (no scripts—execute step by step to learn!).
+This demo uses **4 CPUs per computer, 16 CPUs total, and no GPUs**. Dask's
+GPU workers can remain running. Ray CPU resources control task scheduling;
+they do not reserve physical CPUs exclusively.
 
----
+### 1. Open four SSH terminals
 
-## Common Commands by Method
+From the workstation, open a separate terminal for each computer and connect:
 
-### Manual CLI Commands
-
-```bash
-ray start --head              # Start head node
-ray status                    # Check cluster status
-ray stop                      # Stop Ray cluster
-ray start --address='IP:6379' # Connect worker to head
-```
-
-### Docker Compose Commands
+**Terminal 1 — pc4:**
 
 ```bash
-docker-compose up -d                  # Start cluster
-docker-compose ps                     # List containers
-docker-compose logs -f                # View logs
-docker-compose up -d --scale ray-worker=5  # Scale workers
-docker-compose down                   # Stop cluster
+ssh pc4@192.168.3.74
 ```
 
-### KubeRay Commands
+**Terminal 2 — pc5:**
 
 ```bash
-kubectl apply -f ray-cluster.yaml           # Deploy cluster
-kubectl get raycluster                      # List clusters
-kubectl describe raycluster my-ray-cluster  # Details
-kubectl delete raycluster my-ray-cluster    # Delete cluster
-kubectl logs <pod-name>                     # View pod logs
+ssh pc5@192.168.3.75
 ```
 
----
+**Terminal 3 — pc6:**
 
-## Prerequisites
+```bash
+ssh pc6@192.168.3.76
+```
 
-### System Requirements
-- **OS:** Linux (Ubuntu 20.04+), macOS, or Windows (WSL2)
-- **Disk Space:** 5 GB minimum
-- **RAM:** 4 GB minimum (8 GB recommended for multi-node testing)
+**Terminal 4 — pc7:**
 
-### Required Software (varies by method)
+```bash
+ssh pc7@192.168.3.77
+```
 
-#### For Method 1 (Manual CLI):
-- Python 3.8+
-- pip
-- Basic networking tools (`ssh`, `curl`)
+In **each SSH terminal**, activate the environment before running Ray commands:
 
-#### For Method 2 (Docker Compose):
-- Docker 20.10+
-- Docker Compose 1.29+
+```bash
+conda activate dask-env
+```
 
-#### For Method 3 (KubeRay):
-- Kubernetes cluster (kind, minikube, or cloud K8s)
-- `kubectl` 1.20+
-- Helm 3+ (optional, for KubeRay operator)
+### 2. Install once / check versions
 
----
+Ray is already installed on all four computers. In **each SSH terminal**, check:
 
-## Next Steps
+```bash
+python -c "import sys, ray; print(sys.version.split()[0], ray.__version__)"
+```
 
-1. **Choose your deployment method** based on your environment and needs.
-2. **Navigate to the corresponding folder** (`01-*`, `02-*`, or `03-*`).
-3. **Follow the detailed `README.md`** in that folder.
-4. **Run the example jobs** to verify your cluster is working.
-5. **Adapt the setup** to your own workloads.
+All four should report Python `3.12.16` and Ray `2.59.0`.
+If installing again, run these commands directly on **each computer** to keep
+existing package versions pinned:
 
----
+```bash
+python -m pip freeze > /tmp/ray-demo-before.txt
+python -m pip install -c /tmp/ray-demo-before.txt 'ray[default]==2.59.0'
+python -m pip check
+```
 
-## Resources
+### 3. Start the head on pc4
 
-- [Ray Official Documentation](https://docs.ray.io/)
-- [Ray GitHub Repository](https://github.com/ray-project/ray)
-- [Ray Cluster Launcher Documentation](https://docs.ray.io/en/latest/cluster/getting-started.html)
-- [KubeRay Project](https://github.com/ray-project/kuberay)
-- [Ray Community Slack](https://docs.ray.io/en/latest/community/index.html)
+**pc4 terminal:**
 
----
+```bash
+RAY_USAGE_STATS_ENABLED=0 ray start --head \
+  --node-ip-address=192.168.3.74 --port=6379 \
+  --dashboard-host=0.0.0.0 --dashboard-port=8265 \
+  --num-cpus=4 --num-gpus=0 --object-store-memory=1073741824 \
+  --memory=8589934592
+```
 
-## License
+This starts the head and allows pc4 to run tasks too; no second Ray process
+is needed on pc4. The command returns with Ray running in the background.
+If Ray is already running, skip starting it again or follow the stop step first.
 
-This workshop repository is provided as-is for educational purposes. Please refer to individual Ray projects for their respective licenses.
+Dashboard: <http://192.168.3.74:8265>.
 
----
+### 4. Start the workers
 
-Happy clustering! 🚀
+**pc5 terminal:**
+
+```bash
+RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
+  --node-ip-address=192.168.3.75 --num-cpus=4 --num-gpus=0 \
+  --object-store-memory=1073741824 --memory=8589934592
+```
+
+**pc6 terminal:**
+
+```bash
+RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
+  --node-ip-address=192.168.3.76 --num-cpus=4 --num-gpus=0 \
+  --object-store-memory=1073741824 --memory=8589934592
+```
+
+**pc7 terminal:**
+
+```bash
+RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
+  --node-ip-address=192.168.3.77 --num-cpus=4 --num-gpus=0 \
+  --object-store-memory=1073741824 --memory=8589934592
+```
+
+Each computer contributes a 1 GiB object store and advertises 8 GiB of memory
+for scheduling. These commands also run Ray in the background, so closing
+an SSH terminal does not stop the cluster.
+
+**pc4 terminal**, check the cluster:
+
+```bash
+ray status
+```
+
+Expect **4 active nodes**, **16 CPUs**, and **4 GiB total object store memory**.
+
+### 5. Run the demo
+
+**Workstation**, in a local terminal from this repository, copy the demo to pc4:
+
+```bash
+ssh pc4@192.168.3.74 'mkdir -p ~/ray-demo'
+scp examples/1-ray-core/cluster-demo.py pc4@192.168.3.74:ray-demo/
+```
+
+**pc4 terminal**, submit the demo:
+
+```bash
+cd ~/ray-demo
+ray job submit --address=http://192.168.3.74:8265 \
+  --working-dir . -- python cluster-demo.py
+```
+
+The command streams the output and waits for the job to finish. The demo sends
+one sum-of-squares calculation to each computer, combines the answers, and
+checks the result against the exact formula.
+
+Verified output from all four computers on 2026-11-03:
+
+```text
+Connected to 4 nodes
+192.168.3.74 (hdwc0147): 333332833333500000
+192.168.3.75 (HDWC0148): 2333331833333500000
+192.168.3.76 (hdwc0146): 6333330833333500000
+192.168.3.77 (hdwc0145): 12333329833333500000
+PASS: sum of squares for 4,000,000 integers = 21333325333334000000
+```
+
+This small demo verifies distributed execution; it is not a speed benchmark.
+The dashboard's **Jobs** page also shows the submitted job and its logs.
+
+### 6. Stop the cluster
+
+Run this directly in **each worker terminal (pc5, pc6, pc7)** first, then in
+the **pc4 terminal**:
+
+```bash
+ray stop
+```
+
+Stopping Ray on pc4 alone does not stop the processes on the other computers.
+Use `ray stop` on all four. This leaves the Dask services running.
+
+## More Examples
+
+The first demo is [`examples/1-ray-core/cluster-demo.py`](examples/1-ray-core/cluster-demo.py).
+Other workloads live under `examples/`: Ray Core tasks, distributed training,
+RLlib, Ray Serve, Ray Tune, and LLM serving. Those workloads may need additional
+dependencies, GPU resources, or shared storage beyond this CPU demo.
+
+The [minimal demo guide](docs/minimal-ray-demo.md) also provides workstation
+SSH commands for submission and shutdown. Older guides may reference the
+previous head at `192.168.3.73`; this setup uses **`192.168.3.74`**.
