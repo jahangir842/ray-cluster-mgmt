@@ -1,9 +1,9 @@
 # Minimal four-node Ray demo
 
-Use the existing `dask-env` on pc4–pc7. pc4 (`192.168.3.74`) is the Ray
-head and also runs tasks. This CPU demo advertises 4 CPUs and 0 GPUs per
-node, with a 1 GiB object store per node. Dask's GPU workers can remain running.
-Ray CPU resources are scheduling reservations, not OS CPU isolation.
+pc4 (`192.168.3.74`) is the Ray head and also runs tasks. Ray automatically
+detects all available CPUs and GPUs: 32 logical CPUs and 1 GPU per node,
+128 logical CPUs and 4 GPUs total. Memory and object store sizes use Ray defaults.
+The demo uses CPU tasks; the cluster also supports GPU workloads.
 
 Verified on 2026-11-03: Ray 2.59.0 installed on all four nodes, `pip check`
 passed everywhere, all 52 pre-existing package pins per node were preserved,
@@ -27,12 +27,18 @@ existing packages to their installed versions:
 for n in 4 5 6 7; do
   ssh pc$n@192.168.3.7$n '
     set -e
-    ~/miniconda3/envs/dask-env/bin/python -m pip freeze > /tmp/ray-demo-before.txt
-    ~/miniconda3/envs/dask-env/bin/python -m pip install \
+    for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+      if [[ -x "$ray_bin" ]]; then
+        export PATH="$(dirname "$ray_bin"):$PATH"
+        break
+      fi
+    done
+    python -m pip freeze > /tmp/ray-demo-before.txt
+    python -m pip install \
       -c /tmp/ray-demo-before.txt "ray[default]==2.59.0"
-    ~/miniconda3/envs/dask-env/bin/python -m pip check
+    python -m pip check
   '
-done
+    done
 ```
 
 ## Start
@@ -41,8 +47,8 @@ From the workstation, use `./start-cluster.sh`, `./status-cluster.sh`, and
 `./stop-cluster.sh` to manage the PCs listed in the repository's `hosts.txt`.
 Each entry is `SSH_USER IP_ADDRESS ROLE`, where the role is `head` or `worker`.
 Exactly one head is required; blank lines and `#` comments are allowed.
-These scripts advertise 4 CPUs, 1 GPU, 8 GiB of scheduling RAM, and a 1 GiB
-object store per node. Restart existing Ray processes to apply resource changes.
+These scripts use automatic CPU, GPU, memory, and object store detection.
+Restart existing Ray processes to apply resource changes.
 
 Startup skips already connected workers and continues after failed worker
 connections, then displays status and the dashboard URL. The head must be
@@ -51,28 +57,34 @@ even if some PCs are unreachable. Commands return a nonzero exit status if a
 node fails or the cluster is incomplete. They manage Ray processes on powered-on
 PCs; they do not turn PCs on or off.
 
-The manual commands below retain the original CPU-only demo configuration.
+For manual startup, select the first Miniconda environment containing Ray in
+each SSH terminal (or activate your preferred Ray environment):
 
-On **pc4**, in a terminal with `conda activate dask-env`:
+```bash
+    for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+      if [[ -x "$ray_bin" ]]; then
+        export PATH="$(dirname "$ray_bin"):$PATH"
+        break
+      fi
+    done
+```
+
+On **pc4**:
 
 ```bash
 RAY_USAGE_STATS_ENABLED=0 ray start --head \
   --node-ip-address=192.168.3.74 --port=6379 \
-  --dashboard-host=0.0.0.0 --dashboard-port=8265 \
-  --num-cpus=4 --num-gpus=0 --object-store-memory=1073741824 \
-  --memory=8589934592
+  --dashboard-host=0.0.0.0 --dashboard-port=8265
 ```
 
-On **each of pc5, pc6, pc7**, with `conda activate dask-env`:
+On **each of pc5, pc6, pc7**:
 
 ```bash
-RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
-  --num-cpus=4 --num-gpus=0 --object-store-memory=1073741824 \
-  --memory=8589934592
+RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379
 ```
 
 These commands return after starting background processes; SSH terminals can
-close. On pc4, run `ray status`: expect 4 active nodes and 16 CPUs.
+close. On pc4, run `ray status`: expect 4 active nodes, 128 logical CPUs, and 4 GPUs.
 
 ## Run
 
@@ -82,7 +94,12 @@ From this repository on the workstation, copy the demo to pc4 and submit it:
 ssh pc4@192.168.3.74 'mkdir -p ~/ray-demo'
 scp examples/1-ray-core/cluster-demo.py pc4@192.168.3.74:ray-demo/
 ssh pc4@192.168.3.74 '
-  export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
+    for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+      if [[ -x "$ray_bin" ]]; then
+        export PATH="$(dirname "$ray_bin"):$PATH"
+        break
+      fi
+    done
   ray job submit --address=http://192.168.3.74:8265 \
     --working-dir "$HOME/ray-demo" -- python cluster-demo.py
 '
@@ -102,11 +119,19 @@ From the workstation:
 
 ```bash
 for n in 5 6 7 4; do
-  ssh pc$n@192.168.3.7$n '~/miniconda3/envs/dask-env/bin/ray stop'
+  ssh pc$n@192.168.3.7$n 'bash -s' <<'REMOTE'
+for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+  if [[ -x "$ray_bin" ]]; then
+    export PATH="$(dirname "$ray_bin"):$PATH"
+    break
+  fi
+done
+ray stop
+REMOTE
 done
 ```
 
-This stops Ray processes and leaves the Dask services running.
+This stops Ray processes on all four computers.
 
 References: [Ray installation](https://docs.ray.io/en/latest/ray-overview/installation.html),
 [manual on-premises startup](https://docs.ray.io/en/latest/cluster/vms/user-guides/launching-clusters/on-premises.html).

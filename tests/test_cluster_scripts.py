@@ -18,7 +18,7 @@ class ClusterScriptsTest(unittest.TestCase):
         for name in ("start-cluster.sh", "stop-cluster.sh", "status-cluster.sh",
                      "cluster-common.sh", "hosts.txt"):
             shutil.copy(ROOT / name, self.directory / name)
-        self.bin = self.directory / "miniconda3/envs/dask-env/bin"
+        self.bin = self.directory / "miniconda3/envs/ray-env/bin"
         self.bin.mkdir(parents=True)
         self.log = self.directory / "ssh.log"
         self.env = dict(os.environ, HOME=str(self.directory),
@@ -51,10 +51,10 @@ def init(**kwargs): pass
 def shutdown(): pass
 def nodes():
     addresses = os.environ.get("ADDRESSES", "192.168.3.74 192.168.3.75 192.168.3.76 192.168.3.77").split()
-    return [dict(Alive=True, NodeManagerAddress=ip, Resources={"CPU": 4, "GPU": 1})
+    return [dict(Alive=True, NodeManagerAddress=ip, Resources={"CPU": 32, "GPU": 1})
             for ip in addresses if ip not in os.environ["OFFLINE"].split()]
 def cluster_resources():
-    return {"CPU": 4 * len(nodes()), "GPU": len(nodes())}
+    return {"CPU": 32 * len(nodes()), "GPU": len(nodes())}
 def available_resources(): return cluster_resources()
 ''')
 
@@ -81,6 +81,24 @@ def available_resources(): return cluster_resources()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("GPU                    0.0 used / 4 total", result.stdout)
         self.assertTrue(result.stdout.rstrip().endswith("Dashboard: http://192.168.3.74:8265"))
+
+    def test_start_uses_detected_resources_on_head_and_workers(self):
+        ray_log = self.directory / "ray.log"
+        self.env["RAY_LOG"] = str(ray_log)
+        self.executable("ray", '''#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$RAY_LOG"
+[[ "$1" != status ]]
+''')
+        result = self.run_script("start-cluster.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        starts = [line for line in ray_log.read_text().splitlines()
+                  if line.startswith("start ")]
+        self.assertEqual(len(starts), 4)
+        self.assertTrue(any("--head" in line for line in starts))
+        for line in starts:
+            for flag in ("--num-cpus", "--num-gpus", "--memory", "--object-store-memory"):
+                self.assertNotIn(flag, line)
+        self.assertIn("CPU                    0.0 used / 128 total", result.stdout)
 
     def test_offline_worker_does_not_block_later_workers_or_status(self):
         self.env["OFFLINE"] = "192.168.3.75"

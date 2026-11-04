@@ -10,7 +10,7 @@ simple, make focused changes, and verify the requested outcome.
 
 This is a **Ray Cluster Deployment Workshop** — a learning and reference repository for deploying and using Ray distributed computing clusters. It covers three deployment strategies (manual CLI, Docker Compose, KubeRay) and a growing library of example workloads.
 
-Use the same four GPU computers as `/home/jahangir/projects/dask-mgmt`:
+Use these four GPU computers:
 
 | Node / SSH login | Address | Planned Ray role |
 |---|---|---|
@@ -25,17 +25,17 @@ Verified over SSH on 2026-11-03: each node reports 32 logical CPUs and one
 NVIDIA RTX 4500 Ada Generation GPU (24570 MiB), totaling 128 logical CPUs and
 4 GPUs. These are hardware counts, not Ray resource reservations.
 
-Ray 2.59.0 is installed in `dask-env` on all four nodes. On 2026-11-03, the
-cluster started successfully with pc4 (`192.168.3.74`) as head, 4 CPUs and
-0 GPUs advertised per node, and a 1 GiB object store per node. The demo in
-`examples/1-ray-core/cluster-demo.py` passed on all four nodes. All 52
-pre-existing package pins were preserved on every node. See
-`docs/minimal-ray-demo.md` for lifecycle commands; check `ray status` for
-current runtime state. Older guides and deployment defaults reference a previous
-cluster headed by `192.168.3.73`. Adapt those settings to the table above before
-use, including SSH usernames (which differ per node). The user explicitly
-requested installing Ray in the existing `dask-env`; use that environment on
-all four nodes and preserve the existing Dask package versions.
+Ray 2.59.0 is installed in a Python 3.12 Miniconda environment on all four
+nodes. Cluster scripts locate the first environment containing Ray under
+`~/miniconda3/envs/` in directory name order. Use automatic CPU, GPU, memory,
+and object store detection when starting Ray; do not cap this dedicated cluster
+to a subset of its hardware. Expected capacity is 128 logical CPUs and 4 GPUs.
+Restart existing Ray processes to apply resource configuration changes.
+The demo in `examples/1-ray-core/cluster-demo.py` passed on all four nodes on
+2026-11-03. See `docs/minimal-ray-demo.md` for lifecycle commands; check
+`ray status` for current runtime state. Older guides and deployment defaults
+reference a previous cluster headed by `192.168.3.73`. Adapt those settings to
+the table above before use, including SSH usernames (which differ per node).
 
 ---
 

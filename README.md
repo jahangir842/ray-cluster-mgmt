@@ -1,7 +1,7 @@
 # Ray Cluster Management
 
-Learning setup: a Ray cluster on the same four GPU computers used by
-`dask-mgmt`, managed from the workstation using the scripts below or by
+Learning setup: a Ray cluster on four GPU computers, managed from the
+workstation using the scripts below or by
 running the Ray CLI directly in one SSH terminal per computer. Each computer
 has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
 
@@ -13,8 +13,9 @@ has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
 | `pc7` | `192.168.3.77` | `ssh pc7@192.168.3.77` | Worker |
 | Workstation | `192.168.3.81` | Local terminal | Manages the cluster and copies the demo to pc4 |
 
-All four cluster computers already have Miniconda in `~/miniconda3` and use
-the existing **`dask-env`** with Python 3.12. Ray 2.59.0 is installed there.
+All four cluster computers already have Miniconda in `~/miniconda3` and
+Ray 2.59.0 installed in a Python 3.12 environment. The scripts select the first
+Miniconda environment containing a Ray executable (in directory name order).
 No Ray installation is needed on the workstation for this workflow.
 
 ## Manage the Cluster from Your Workstation
@@ -28,13 +29,16 @@ No local Ray installation or conda activation is needed.
 ./stop-cluster.sh    # Stop workers, then head
 ```
 
-Startup enables 4 CPUs and 1 GPU per node. Dask services remain running.
+Startup automatically detects all CPUs and GPUs: **32 logical CPUs and 1 GPU
+per node, 128 logical CPUs and 4 GPUs total**. Ray chooses memory and object
+store sizes automatically. To apply this configuration to an already running
+cluster, run `./stop-cluster.sh` followed by `./start-cluster.sh`.
 
-## Quick Start (Manual SSH, CPU Only)
+## Quick Start (Manual SSH)
 
-This demo uses **4 CPUs per computer, 16 CPUs total, and no GPUs**. Dask's
-GPU workers can remain running. Ray CPU resources control task scheduling;
-they do not reserve physical CPUs exclusively.
+The cluster exposes all available CPUs and GPUs. The small demo below uses CPU
+tasks; GPU resources are available for other workloads. Ray resource counts
+control scheduling; they do not reserve physical CPUs exclusively.
 
 ### 1. Open four SSH terminals
 
@@ -64,10 +68,15 @@ ssh pc6@192.168.3.76
 ssh pc7@192.168.3.77
 ```
 
-In **each SSH terminal**, activate the environment before running Ray commands:
+In **each SSH terminal**, select the installed Ray environment before running commands:
 
 ```bash
-conda activate dask-env
+for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+  if [[ -x "$ray_bin" ]]; then
+    export PATH="$(dirname "$ray_bin"):$PATH"
+    break
+  fi
+done
 ```
 
 ### 2. Install once / check versions
@@ -95,9 +104,7 @@ python -m pip check
 ```bash
 RAY_USAGE_STATS_ENABLED=0 ray start --head \
   --node-ip-address=192.168.3.74 --port=6379 \
-  --dashboard-host=0.0.0.0 --dashboard-port=8265 \
-  --num-cpus=4 --num-gpus=0 --object-store-memory=1073741824 \
-  --memory=8589934592
+  --dashboard-host=0.0.0.0 --dashboard-port=8265
 ```
 
 This starts the head and allows pc4 to run tasks too; no second Ray process
@@ -112,28 +119,25 @@ Dashboard: <http://192.168.3.74:8265>.
 
 ```bash
 RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
-  --node-ip-address=192.168.3.75 --num-cpus=4 --num-gpus=0 \
-  --object-store-memory=1073741824 --memory=8589934592
+  --node-ip-address=192.168.3.75
 ```
 
 **pc6 terminal:**
 
 ```bash
 RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
-  --node-ip-address=192.168.3.76 --num-cpus=4 --num-gpus=0 \
-  --object-store-memory=1073741824 --memory=8589934592
+  --node-ip-address=192.168.3.76
 ```
 
 **pc7 terminal:**
 
 ```bash
 RAY_USAGE_STATS_ENABLED=0 ray start --address=192.168.3.74:6379 \
-  --node-ip-address=192.168.3.77 --num-cpus=4 --num-gpus=0 \
-  --object-store-memory=1073741824 --memory=8589934592
+  --node-ip-address=192.168.3.77
 ```
 
-Each computer contributes a 1 GiB object store and advertises 8 GiB of memory
-for scheduling. These commands also run Ray in the background, so closing
+Ray automatically detects CPU and GPU resources and sizes its memory and
+object store from available memory. These commands run Ray in the background, so closing
 an SSH terminal does not stop the cluster.
 
 **pc4 terminal**, check the cluster:
@@ -142,7 +146,8 @@ an SSH terminal does not stop the cluster.
 ray status
 ```
 
-Expect **4 active nodes**, **16 CPUs**, and **4 GiB total object store memory**.
+Expect **4 active nodes**, **128 logical CPUs**, and **4 GPUs**. Memory and
+object store totals depend on available memory when Ray starts.
 
 ### 5. Run the demo
 
@@ -189,7 +194,7 @@ ray stop
 ```
 
 Stopping Ray on pc4 alone does not stop the processes on the other computers.
-Use `ray stop` on all four. This leaves the Dask services running.
+Use `ray stop` on all four.
 
 ## More Examples
 

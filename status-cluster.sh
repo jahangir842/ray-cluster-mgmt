@@ -14,7 +14,12 @@ printf -v remote_args '%q ' "${host_args[@]}"
 if run_step "Query Ray head · $head_address" \
   ssh "${ssh_options[@]}" "$head_user@$head_address" "bash -s -- $remote_args" <<'REMOTE'
 set -euo pipefail
-export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
+for ray_bin in "$HOME"/miniconda3/envs/*/bin/ray; do
+  if [[ -x "$ray_bin" ]]; then
+    export PATH="$(dirname "$ray_bin"):$PATH"
+    break
+  fi
+done
 timeout 20 python - "$@" <<'PY'
 import sys
 import ray

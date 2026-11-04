@@ -37,7 +37,7 @@ load_hosts() {
 
 heading() {
   printf '\n%s  RAY CLUSTER  /  %s%s\n' "$cyan" "$1" "$reset"
-  printf '%s  %s head + %s workers · dask-env%s\n\n' "$dim" "$head_user" "$((${#host_users[@]} - 1))" "$reset"
+  printf '%s  %s head + %s workers%s\n\n' "$dim" "$head_user" "$((${#host_users[@]} - 1))" "$reset"
 }
 
 notice() { printf '  %s[ OK ]%s %s\n' "$green" "$reset" "$1"; }
