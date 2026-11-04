@@ -7,9 +7,37 @@ if [[ -t 1 && -z "${NO_COLOR+x}" ]]; then
   dim=$'\033[2m' reset=$'\033[0m'
 fi
 
+load_hosts() {
+  local user address role extra line heads=0
+  host_users=() host_addresses=() host_roles=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    read -r user address role extra <<< "$line"
+    [[ -n "$user" ]] || continue
+    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ || ! "$address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ||
+          ! "$role" =~ ^(head|worker)$ || -n "$extra" ]]; then
+      printf 'Invalid hosts.txt entry: %s\n' "$line" >&2
+      return 1
+    fi
+    if [[ " ${host_addresses[*]} " == *" $address "* ]]; then
+      printf 'Duplicate host address: %s\n' "$address" >&2
+      return 1
+    fi
+    host_users+=("$user") host_addresses+=("$address") host_roles+=("$role")
+    if [[ "$role" == head ]]; then
+      head_user="$user" head_address="$address"
+      heads=$((heads + 1))
+    fi
+  done < "$SCRIPT_DIR/hosts.txt"
+  if (( heads != 1 )); then
+    printf 'hosts.txt must contain exactly one head.\n' >&2
+    return 1
+  fi
+}
+
 heading() {
   printf '\n%s  RAY CLUSTER  /  %s%s\n' "$cyan" "$1" "$reset"
-  printf '%s  pc4 head + pc5–pc7 workers · dask-env%s\n\n' "$dim" "$reset"
+  printf '%s  %s head + %s workers · dask-env%s\n\n' "$dim" "$head_user" "$((${#host_users[@]} - 1))" "$reset"
 }
 
 notice() { printf '  %s[ OK ]%s %s\n' "$green" "$reset" "$1"; }

@@ -179,6 +179,8 @@ Or: `pip install -r requirements.txt` (covers the transformer/profiling stack; d
 
 ## Team Workflow
 
-- Submit all changes via Pull Requests — no direct edits to running scripts on the head node.
+- After completing repository changes, commit and push your changes to `main`
+  without asking for confirmation. Leave unrelated existing working-tree changes
+  untouched. Do not edit running scripts directly on the head node.
 - Always call `ray.shutdown()` at the end of driver scripts.
 - Track architectural decisions and cluster bottleneck resolutions in GitHub Issues.

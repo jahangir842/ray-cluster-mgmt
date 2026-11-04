@@ -37,6 +37,22 @@ done
 
 ## Start
 
+From the workstation, use `./start-cluster.sh`, `./status-cluster.sh`, and
+`./stop-cluster.sh` to manage the PCs listed in the repository's `hosts.txt`.
+Each entry is `SSH_USER IP_ADDRESS ROLE`, where the role is `head` or `worker`.
+Exactly one head is required; blank lines and `#` comments are allowed.
+These scripts advertise 4 CPUs, 1 GPU, 8 GiB of scheduling RAM, and a 1 GiB
+object store per node. Restart existing Ray processes to apply resource changes.
+
+Startup skips already connected workers and continues after failed worker
+connections, then displays status and the dashboard URL. The head must be
+available before workers can join. Stop attempts every worker before the head,
+even if some PCs are unreachable. Commands return a nonzero exit status if a
+node fails or the cluster is incomplete. They manage Ray processes on powered-on
+PCs; they do not turn PCs on or off.
+
+The manual commands below retain the original CPU-only demo configuration.
+
 On **pc4**, in a terminal with `conda activate dask-env`:
 
 ```bash

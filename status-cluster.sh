@@ -3,19 +3,28 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/cluster-common.sh"
+load_hosts
 heading "STATUS"
 
-if run_step "Query Ray head · 192.168.3.74" \
-  ssh "${ssh_options[@]}" pc4@192.168.3.74 'bash -s' <<'REMOTE'
+host_args=()
+for i in "${!host_users[@]}"; do
+  host_args+=("${host_users[i]}" "${host_addresses[i]}" "${host_roles[i]}")
+done
+printf -v remote_args '%q ' "${host_args[@]}"
+if run_step "Query Ray head · $head_address" \
+  ssh "${ssh_options[@]}" "$head_user@$head_address" "bash -s -- $remote_args" <<'REMOTE'
 set -euo pipefail
 export PATH="$HOME/miniconda3/envs/dask-env/bin:$PATH"
-timeout 20 python - <<'PY'
+timeout 20 python - "$@" <<'PY'
+import sys
 import ray
 
+hosts = list(zip(*[iter(sys.argv[1:])] * 3))
+head_address = next(ip for _, ip, role in hosts if role == "head")
 try:
     ray.init(address="auto", logging_level="ERROR")
 except ConnectionError:
-    print("Ray head is stopped or unavailable on pc4.")
+    print(f"Ray head is stopped or unavailable on {head_address}.")
     raise SystemExit(1)
 try:
     nodes = [node for node in ray.nodes() if node["Alive"]]
@@ -25,8 +34,7 @@ try:
     print(f"  {'PC':<5} {'ADDRESS':<17} {'ROLE':<8} {'STATE':<12} {'CPU':>5} {'GPU':>5} {'RAM GiB':>9} {'STORE GiB':>11}")
     print("  " + "─" * 88)
     healthy = True
-    for n in (4, 5, 6, 7):
-        ip = f"192.168.3.7{n}"
+    for user, ip, role in hosts:
         matches = [node for node in nodes if node["NodeManagerAddress"] == ip]
         state = "ONLINE" if len(matches) == 1 else "MISSING" if not matches else "DUPLICATE"
         healthy = healthy and len(matches) == 1
@@ -34,20 +42,20 @@ try:
         for node in matches:
             for key, value in node["Resources"].items():
                 resources[key] = resources.get(key, 0) + value
-        print(f"  {'pc' + str(n):<5} {ip:<17} {'head' if n == 4 else 'worker':<8} {state:<12} {resources.get('CPU', 0):>5g} {resources.get('GPU', 0):>5g} {resources.get('memory', 0) / 2**30:>9.1f} {resources.get('object_store_memory', 0) / 2**30:>11.1f}")
+        print(f"  {user:<5} {ip:<17} {role:<8} {state:<12} {resources.get('CPU', 0):>5g} {resources.get('GPU', 0):>5g} {resources.get('memory', 0) / 2**30:>9.1f} {resources.get('object_store_memory', 0) / 2**30:>11.1f}")
     print()
-    print(f"  Active Ray nodes: {len(nodes)}  |  Expected: 4")
+    print(f"  Active Ray nodes: {len(nodes)}  |  Expected: {len(hosts)}")
     for key, label, divisor in (("CPU", "CPU", 1), ("GPU", "GPU", 1), ("memory", "RAM GiB", 2**30), ("object_store_memory", "Object store GiB", 2**30)):
         capacity = total.get(key, 0) / divisor
         free = available.get(key, 0) / divisor
         print(f"  {label:<18} {max(0, capacity - free):>7.1f} used / {capacity:g} total")
     print("\n  RAM is Ray scheduling capacity, not GPU VRAM or physical RAM usage.")
-    print("  Dashboard: http://192.168.3.74:8265\n")
 finally:
     ray.shutdown()
 # Report incomplete clusters without discarding the table.
-if not healthy or len(nodes) != 4:
-    print("  WARNING: expected exactly one Ray node per computer.")
+if not healthy or len(nodes) != len(hosts):
+    print("  WARNING: expected exactly one Ray node per configured computer.")
+print(f"\n  Dashboard: http://{head_address}:8265\n")
 PY
 REMOTE
 then

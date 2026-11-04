@@ -1,0 +1,6 @@
+# SSH user   IP address       Ray role (exactly one head)
+# Blank lines and comments are ignored.
+pc4          192.168.3.74     head
+pc5          192.168.3.75     worker
+pc6          192.168.3.76     worker
+pc7          192.168.3.77     worker

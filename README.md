@@ -1,8 +1,9 @@
 # Ray Cluster Management
 
 Learning setup: a Ray cluster on the same four GPU computers used by
-`dask-mgmt`, managed by running the Ray CLI directly in one SSH terminal per
-computer. Each computer has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
+`dask-mgmt`, managed from the workstation using the scripts below or by
+running the Ray CLI directly in one SSH terminal per computer. Each computer
+has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
 
 | Computer | Address | SSH access | Ray role |
 |---|---|---|---|
@@ -10,13 +11,66 @@ computer. Each computer has 32 logical CPUs and an RTX 4500 Ada 24 GB GPU.
 | `pc5` | `192.168.3.75` | `ssh pc5@192.168.3.75` | Worker |
 | `pc6` | `192.168.3.76` | `ssh pc6@192.168.3.76` | Worker |
 | `pc7` | `192.168.3.77` | `ssh pc7@192.168.3.77` | Worker |
-| Workstation | `192.168.3.81` | Local terminal | Copies the demo to pc4 |
+| Workstation | `192.168.3.81` | Local terminal | Manages the cluster and copies the demo to pc4 |
 
 All four cluster computers already have Miniconda in `~/miniconda3` and use
 the existing **`dask-env`** with Python 3.12. Ray 2.59.0 is installed there.
 No Ray installation is needed on the workstation for this workflow.
 
-## Quick Start
+## Scripts to Start, Stop, and Check the Whole Cluster
+
+Run these from a **local workstation terminal**, inside this repository.
+They SSH into pc4–pc7 and use `~/miniconda3/envs/dask-env` directly, so no
+local conda activation is needed. SSH key access must already work for all
+four computers; the scripts use non-interactive SSH. The node usernames,
+addresses, and roles are configured in [`hosts.txt`](hosts.txt).
+
+```bash
+cd /home/jahangir/projects/ray-cluster-mgmt
+```
+
+**Start the whole cluster:**
+
+```bash
+./start-cluster.sh
+```
+
+The [start script](start-cluster.sh) starts the head on pc4, then the
+workers on pc5–pc7. Each node advertises **4 CPUs, 1 GPU, 8 GiB of RAM
+scheduling capacity, and a 1 GiB object store** (16 CPUs and 4 GPUs total).
+The manual CPU-only demo below uses no GPUs.
+It skips an existing head and workers already connected to it, then prints
+a table of node states, CPU/GPU counts, RAM scheduling capacity, and object
+store capacity, plus the dashboard address.
+
+**Stop the whole cluster:**
+
+```bash
+./stop-cluster.sh
+```
+
+The [stop script](stop-cluster.sh) stops workers first, then pc4.
+It attempts all four computers even if one fails, and returns a nonzero exit
+code if any SSH or stop command fails. Both scripts leave Dask services running.
+
+**Check cluster status:**
+
+```bash
+./status-cluster.sh
+```
+
+The [status script](status-cluster.sh) shows each computer by name and IP,
+flags missing or duplicate Ray nodes, and summarizes used/total Ray resources.
+RAM figures are Ray scheduling capacity, not GPU VRAM or measured physical
+RAM usage.
+
+All three scripts show colored headings and concise progress messages in a
+terminal, with plain output when redirected or when `NO_COLOR` is set.
+Successful Ray command logs are hidden. On failure, they show a short error
+excerpt and the path to the complete log under `/tmp/ray-cluster.*` on the
+workstation. The scripts use the shared `cluster-common.sh` beside them.
+
+## Quick Start (Manual SSH, CPU Only)
 
 This demo uses **4 CPUs per computer, 16 CPUs total, and no GPUs**. Dask's
 GPU workers can remain running. Ray CPU resources control task scheduling;
@@ -187,49 +241,3 @@ dependencies, GPU resources, or shared storage beyond this CPU demo.
 The [minimal demo guide](docs/minimal-ray-demo.md) also provides workstation
 SSH commands for submission and shutdown. Older guides may reference the
 previous head at `192.168.3.73`; this setup uses **`192.168.3.74`**.
-
-## Scripts to Start, Stop, and Check the Whole Cluster
-
-Run these from a **local workstation terminal**, inside this repository.
-They SSH into pc4–pc7 and use `~/miniconda3/envs/dask-env` directly, so no
-local conda activation is needed. SSH key access must already work for all
-four computers; the scripts use non-interactive SSH.
-
-**Start the whole cluster:**
-
-```bash
-bash start-cluster.sh
-```
-
-The [start script](start-cluster.sh) starts the head on pc4, then the
-workers on pc5–pc7, using the same resources as the manual commands above.
-It skips an existing head and workers already connected to it, then prints
-a table of node states, CPU/GPU counts, RAM scheduling capacity, and object
-store capacity, plus the dashboard address.
-
-**Stop the whole cluster:**
-
-```bash
-bash stop-cluster.sh
-```
-
-The [stop script](stop-cluster.sh) stops workers first, then pc4.
-It attempts all four computers even if one fails, and returns a nonzero exit
-code if any SSH or stop command fails. Both scripts leave Dask services running.
-
-**Check cluster status:**
-
-```bash
-./staus-cluster.sh
-```
-
-The [status script](staus-cluster.sh) shows each computer by name and IP,
-flags missing or duplicate Ray nodes, and summarizes used/total Ray resources.
-The filename is `staus-cluster.sh`. RAM figures are Ray scheduling capacity,
-not GPU VRAM or measured physical RAM usage.
-
-All three scripts show colored headings and concise progress messages in a
-terminal, with plain output when redirected or when `NO_COLOR` is set.
-Successful Ray command logs are hidden. On failure, they show a short error
-excerpt and the path to the complete log under `/tmp/ray-cluster.*` on the
-workstation. The scripts use the shared `cluster-common.sh` beside them.
