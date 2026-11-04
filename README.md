@@ -17,58 +17,18 @@ All four cluster computers already have Miniconda in `~/miniconda3` and use
 the existing **`dask-env`** with Python 3.12. Ray 2.59.0 is installed there.
 No Ray installation is needed on the workstation for this workflow.
 
-## Scripts to Start, Stop, and Check the Whole Cluster
+## Manage the Cluster from Your Workstation
 
-Run these from a **local workstation terminal**, inside this repository.
-They SSH into pc4–pc7 and use `~/miniconda3/envs/dask-env` directly, so no
-local conda activation is needed. SSH key access must already work for all
-four computers; the scripts use non-interactive SSH. The node usernames,
-addresses, and roles are configured in [`hosts.txt`](hosts.txt).
+Run from this repository with SSH key access to the nodes in [`hosts.txt`](hosts.txt).
+No local Ray installation or conda activation is needed.
 
 ```bash
-cd /home/jahangir/projects/ray-cluster-mgmt
+./start-cluster.sh   # Start head and workers
+./status-cluster.sh  # Show node status and resources
+./stop-cluster.sh    # Stop workers, then head
 ```
 
-**Start the whole cluster:**
-
-```bash
-./start-cluster.sh
-```
-
-The [start script](start-cluster.sh) starts the head on pc4, then the
-workers on pc5–pc7. Each node advertises **4 CPUs, 1 GPU, 8 GiB of RAM
-scheduling capacity, and a 1 GiB object store** (16 CPUs and 4 GPUs total).
-The manual CPU-only demo below uses no GPUs.
-It skips an existing head and workers already connected to it, then prints
-a table of node states, CPU/GPU counts, RAM scheduling capacity, and object
-store capacity, plus the dashboard address.
-
-**Stop the whole cluster:**
-
-```bash
-./stop-cluster.sh
-```
-
-The [stop script](stop-cluster.sh) stops workers first, then pc4.
-It attempts all four computers even if one fails, and returns a nonzero exit
-code if any SSH or stop command fails. Both scripts leave Dask services running.
-
-**Check cluster status:**
-
-```bash
-./status-cluster.sh
-```
-
-The [status script](status-cluster.sh) shows each computer by name and IP,
-flags missing or duplicate Ray nodes, and summarizes used/total Ray resources.
-RAM figures are Ray scheduling capacity, not GPU VRAM or measured physical
-RAM usage.
-
-All three scripts show colored headings and concise progress messages in a
-terminal, with plain output when redirected or when `NO_COLOR` is set.
-Successful Ray command logs are hidden. On failure, they show a short error
-excerpt and the path to the complete log under `/tmp/ray-cluster.*` on the
-workstation. The scripts use the shared `cluster-common.sh` beside them.
+Startup enables 4 CPUs and 1 GPU per node. Dask services remain running.
 
 ## Quick Start (Manual SSH, CPU Only)
 
